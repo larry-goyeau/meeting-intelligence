@@ -1,0 +1,50 @@
+Title: MI-412 Postmortem and Orion Storage Follow-up
+Date: 2026-02-05
+Participants: Tom Nakamura, Daniel Okoye, Marcus Webb, Priya Raman, Sofia Alvarez
+
+[00:00:06] Tom Nakamura: This is the postmortem for MI-412, and I've added fifteen minutes at the end because the second incident last Tuesday changes a decision we made in January.
+[00:00:19] Priya Raman: Blameless, as usual. Timeline first?
+[00:00:24] Tom Nakamura: Timeline. Thursday the sixteenth, 14:02, connection count on the primary starts climbing. 14:11, pool saturated, writes start queueing. 14:18, first customer report. 14:41, we recycle the pooler and it recovers. Forty minutes of degraded writes, no data loss.
+[00:00:51] Daniel Okoye: And the cause was the reporting query, not us.
+[00:00:56] Tom Nakamura: The trigger was a support engineer running an unbounded analytics query by hand against the primary. The cause is that nothing prevented it. There was no statement timeout on that role and no read replica routing.
+[00:01:16] Marcus Webb: That's my team. That query was mine, or one of mine. We've been running those by hand for two years because there was nowhere else to run them.
+[00:01:28] Tom Nakamura: Which is exactly why I'm not calling it your fault. The system made it easy to do the wrong thing. Orion exists to make that unnecessary.
+[00:01:40] Sofia Alvarez: Does this make Orion more urgent or less?
+[00:01:45] Tom Nakamura: More urgent as a product, more careful as an implementation. Which brings me to the second incident.
+[00:01:54] Priya Raman: Tuesday. I saw the alert but not the resolution.
+[00:02:00] Tom Nakamura: Tuesday the third, Daniel ran the Orion backfill against production. Chunked, over the weekend, exactly as agreed. That part worked. What we did not anticipate was the effect on the buffer cache. The backfill pulled ninety days of event history through shared buffers, evicted the working set, and p99 latency on the checkout path went from forty milliseconds to nine hundred for about two hours.
+[00:02:32] Daniel Okoye: For the record, I did run it on the replica first. The replica has the same specs but no production read traffic, so the cache eviction didn't show up there. That's my mistake — I tested the disk impact and not the cache impact.
+[00:02:52] Tom Nakamura: I signed off on the same plan, so it's both of ours. And it's the third time in two years that an analytics workload on the primary has hurt the transactional path.
+[00:03:06] Sofia Alvarez: So what changes?
+[00:03:09] Tom Nakamura: Two things, and the second one is the reversal I mentioned. First, all analytics reads move to a dedicated read replica with a statement timeout, and the support role loses access to the primary entirely. That's uncontroversial, I hope.
+[00:03:29] Marcus Webb: No objection. I'd like the replica before you take away primary access, though, not after.
+[00:03:37] Tom Nakamura: Fair. Replica first, then revoke.
+[00:03:42] Tom Nakamura: Second. In the architecture review on the fifteenth we decided to enable pgvector on the existing RDS instance for the H2 natural-language prototype. I want to reverse that decision.
+[00:03:58] Daniel Okoye: I expected this, and I'm not going to fight it. Go ahead and make the case.
+[00:04:05] Tom Nakamura: The case is that Tuesday was a two-hour customer-facing latency incident caused by an analytics workload sharing a buffer cache with the transactional path. An embedding index is exactly that same shape of workload: large sequential reads over data nobody in the checkout path cares about. We would be setting up the same incident deliberately, having just written the postmortem for it.
+[00:04:35] Marcus Webb: I raised this in January and I said I wouldn't die on the hill. I'd like it noted that I'm now willing to die on the hill.
+[00:04:45] Priya Raman: Noted with relish, I'm sure.
+[00:04:49] Daniel Okoye: My original argument was that a prototype shouldn't require new infrastructure. That argument was about cost of setup, and it assumed the prototype was harmless. Tuesday shows it isn't harmless on that instance. So the argument doesn't hold and I withdraw it.
+[00:05:10] Sofia Alvarez: What's the alternative, concretely, and what does it cost?
+[00:05:16] Marcus Webb: A managed vector service. For a prototype at our volume we're talking tens of dollars a month, not thousands. The corpus is a few hundred thousand chunks at most.
+[00:05:31] Tom Nakamura: Or pgvector on the dedicated analytics replica, which we're now provisioning anyway. That keeps it in Postgres and off the primary.
+[00:05:43] Daniel Okoye: I prefer that. Same extension, same operational knowledge, and it rides on infrastructure we've already decided to build for other reasons.
+[00:05:55] Marcus Webb: I can live with that. My objection was about the primary, not about Postgres.
+[00:06:02] Sofia Alvarez: Then let's be precise about what we're deciding, because I want the notes to be unambiguous. We are reversing the fifteenth of January decision to run pgvector on the primary RDS instance. The new decision is pgvector on the dedicated analytics read replica, which Tom is provisioning as an action from this postmortem.
+[00:06:26] Tom Nakamura: Correct. And I'll write the replica sizing to account for the vector index rather than sizing it only for the aggregate queries.
+[00:06:36] Priya Raman: I'll update the architecture decision record. For the record, this is why we write down the revisit trigger — although the trigger we wrote down was query latency, and what actually forced it was an incident.
+[00:06:52] Marcus Webb: Which is a lesson in itself. Our trigger was about the thing getting slow, not about it hurting something else.
+[00:07:01] Tom Nakamura: I'll add a second trigger to the ADR: any analytics workload that shares a buffer cache with transactional traffic gets reviewed before it ships, regardless of size.
+[00:07:15] Sofia Alvarez: Good. Anything else from the postmortem proper?
+[00:07:20] Tom Nakamura: Action items. I'm provisioning the analytics replica, target end of next week. Daniel is adding statement timeouts on all non-application roles. Marcus is moving his manual queries to the replica once it exists, and then I revoke primary access from the support role. And I'm writing the buffer cache trigger into the ADR.
+[00:07:45] Daniel Okoye: The statement timeout is a one-line change but it needs a migration window, so call it early next week.
+[00:07:54] Priya Raman: Does any of this move the beta date?
+[00:07:58] Daniel Okoye: No. The backfill is done, it just cost us two hours of latency on the way. Everything else in sprint one landed.
+[00:08:08] Sofia Alvarez: Then the beta is still end of Q1 with five design partners. I have the list now, by the way — three enterprise, two mid-market, no startups.
+[00:08:20] Priya Raman: Lea will want to know that.
+[00:08:23] Sofia Alvarez: I told her yesterday. She's already changed the density defaults.
+[00:08:29] Tom Nakamura: One last thing. Multi-region came up in January and we deferred it. One of the three enterprise partners is German. Has anyone asked them about data residency?
+[00:08:43] Sofia Alvarez: Not yet. I'll ask in the onboarding call this week.
+[00:08:48] Tom Nakamura: Please do, because if the answer is yes it's not an Orion problem, it's a company problem, and I'd rather find out in February than in March.
+[00:08:59] Sofia Alvarez: Understood. That's on me this week.
+[00:09:04] Priya Raman: Then we're done. I'll circulate the postmortem and the updated ADR by Friday.

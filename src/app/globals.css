@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+/*
+ * A deliberately narrow palette. This is a reading tool: the transcript text and
+ * the answer are the content, and everything else is chrome that should recede.
+ * One accent colour for interaction, one for warnings, one for reversals.
+ */
+@theme {
+  --color-canvas: #0a0b0e;
+  --color-panel: #12141a;
+  --color-panel-raised: #181b23;
+  --color-line: #23262f;
+  --color-line-bright: #2f333e;
+  --color-ink: #e8eaee;
+  --color-ink-muted: #9aa2af;
+  --color-ink-faint: #6b7280;
+  --color-accent: #7c9cff;
+  --color-accent-soft: #1b2340;
+  --color-warn: #f0b429;
+  --color-warn-soft: #2a2210;
+  --color-danger: #f87171;
+  --color-danger-soft: #2b1618;
+  --color-good: #4ade80;
+
+  --font-sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+* {
+  min-width: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+/* Scrollbars that do not fight the dark theme. */
+@supports selector(::-webkit-scrollbar) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-bright);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3d424f;
+    background-clip: content-box;
+  }
+}
+
+@utility panel {
+  background-color: var(--color-panel);
+  border: 1px solid var(--color-line);
+}
+
+/* Focus ring applied once, so every interactive element is keyboard-visible. */
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@keyframes pulse-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+
+.streaming-caret::after {
+  content: "";
+  display: inline-block;
+  width: 0.5ch;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background-color: var(--color-accent);
+  animation: pulse-caret 1s steps(2, start) infinite;
+}
+
+@keyframes source-flash {
+  from {
+    box-shadow: 0 0 0 2px var(--color-accent);
+  }
+  to {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
+.source-flash {
+  animation: source-flash 1.4s ease-out;
+}
+
+@keyframes fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.fade-rise {
+  animation: fade-rise 0.22s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

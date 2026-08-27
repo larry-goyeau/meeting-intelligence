@@ -1,0 +1,59 @@
+Title: Project Orion Kickoff
+Date: 2026-01-08
+Participants: Sofia Alvarez, Priya Raman, Daniel Okoye, Lea Fontaine, Marcus Webb
+
+[00:00:04] Sofia Alvarez: Alright, we're recording. Thanks everyone for making the time. The goal today is to leave this room agreeing on what Orion actually is, who it's for, and what we are not doing in the first release.
+[00:00:22] Priya Raman: Can we start with the not-doing list? Every project I've been on wasted the first month because nobody wrote that down.
+[00:00:31] Sofia Alvarez: Happy to. But context first. Orion is customer-facing analytics inside the product. Right now when a customer wants to know how their team is using us, they email support, and someone on Marcus's team runs a query by hand.
+[00:00:49] Marcus Webb: Forty-one times last month. I counted. It's about three hours a week of my team answering questions that a chart could answer.
+[00:01:02] Sofia Alvarez: So the pitch is: a dashboard in the product, self-serve, that answers the top ten questions customers ask us. Usage over time, seats active, feature adoption, and export to CSV.
+[00:01:19] Lea Fontaine: Do we know it's the top ten, or do we think it's the top ten?
+[00:01:24] Sofia Alvarez: Fair. I pulled the support tickets and tagged them. Eight questions cover seventy-three percent of the volume. The other two are on the list because two enterprise accounts asked for them in renewal calls.
+[00:01:41] Lea Fontaine: That's a much better answer than I expected. Fine by me.
+[00:01:47] Daniel Okoye: What's the latency expectation? That changes the whole shape of the backend. If customers expect real-time, we're building a streaming pipeline. If they'll accept yesterday's numbers, we're building a nightly job and I can have it done in three weeks.
+[00:02:08] Sofia Alvarez: What do the tickets say, Marcus?
+[00:02:12] Marcus Webb: Nobody has ever asked for real-time. They ask "how many people used the export feature last quarter". The freshest question I've seen is "is anyone using it this week".
+[00:02:27] Daniel Okoye: Then I want to propose we commit to hourly, advertise daily, and never say the word real-time in any customer-facing copy.
+[00:02:38] Priya Raman: I like that. Under-promise on freshness, over-deliver quietly.
+[00:02:45] Sofia Alvarez: Let's make that a decision. We're going with hourly aggregation, and the UI will say "updated hourly". No real-time in v1.
+[00:02:58] Lea Fontaine: I'll need a timestamp in the corner of every chart then. Otherwise the first support ticket is "why is this number different from my own count".
+[00:03:09] Sofia Alvarez: Agreed, add it to the design.
+[00:03:14] Marcus Webb: While we're on numbers that don't match — we need to decide whether the dashboard counts a "seat" the same way billing does. Because billing counts provisioned seats and product counts people who logged in, and those differ by about twenty percent on average.
+[00:03:36] Priya Raman: Oh, that's a landmine.
+[00:03:39] Marcus Webb: It's worse than a landmine, it's a landmine that sends emails. If a customer sees 80 active seats and their invoice says 100, that's a support ticket at best and a renewal conversation at worst.
+[00:03:56] Sofia Alvarez: What are the options?
+[00:04:00] Marcus Webb: Either we show both with clear labels, or we show only active and never mention billing, or we align the definitions, which means a conversation with finance that I do not want to own.
+[00:04:16] Daniel Okoye: Show both. Two numbers with two labels is honest. One number that's ambiguous is a bug report waiting to happen.
+[00:04:27] Lea Fontaine: Two numbers side by side needs real design work. It's not just a label, we need to explain the difference in a way people read in two seconds.
+[00:04:40] Sofia Alvarez: Can you take a pass at it?
+[00:04:43] Lea Fontaine: I'll mock up two options by Wednesday and we can pick.
+[00:04:49] Sofia Alvarez: Good. So that one stays open for now, we'll settle it once we see the mockups.
+[00:04:58] Priya Raman: Can I get us back to the not-doing list? I count three things so far that sound like they're creeping in.
+[00:05:07] Sofia Alvarez: Go.
+[00:05:09] Priya Raman: Custom dashboards. Scheduled email reports. And anything that requires us to store customer PII we don't already store.
+[00:05:20] Daniel Okoye: Strong agree on the third one. The moment we copy email addresses into an analytics store, we inherit a whole compliance surface. I'd like us to aggregate on write and never persist per-user rows in the analytics path.
+[00:05:39] Marcus Webb: That does constrain us. If we only store aggregates, we can't answer a question we didn't think of in advance. Someone will ask "which users churned after the redesign" and the data will be gone.
+[00:05:56] Daniel Okoye: We still have the source events in the main database with the normal retention. This is only about what we copy into the analytics path.
+[00:06:07] Marcus Webb: That's fine then. I withdraw the objection.
+[00:06:12] Sofia Alvarez: Let's write it down as a decision: the analytics store holds aggregates only, no per-user rows, no PII.
+[00:06:22] Priya Raman: And custom dashboards and scheduled reports are explicitly out of v1?
+[00:06:28] Sofia Alvarez: Out of v1. I'll put them on the roadmap page so nobody thinks we forgot.
+[00:06:36] Lea Fontaine: What about mobile? Is the dashboard responsive or desktop-only?
+[00:06:42] Sofia Alvarez: What's the cost difference?
+[00:06:45] Lea Fontaine: Responsive charts are maybe four extra days. Charts are the hard part, everything else reflows for free.
+[00:06:54] Sofia Alvarez: Four days is cheap. Let's do responsive.
+[00:07:00] Priya Raman: Timeline. What are we actually committing to, and to whom?
+[00:07:07] Sofia Alvarez: I've told the exec team end of Q1 for a beta with five design partners. I have not committed to general availability.
+[00:07:18] Priya Raman: End of Q1 is eleven weeks. Daniel, three weeks for the pipeline, you said?
+[00:07:25] Daniel Okoye: Three weeks for the aggregation job and the API, assuming the schema is settled. The storage decision is the risk. If we end up needing something we don't already run in production, add two weeks for me to learn its failure modes.
+[00:07:44] Priya Raman: Let's book a separate session on storage. That's not a twenty-minute conversation and we're already at seven.
+[00:07:53] Sofia Alvarez: Next week, architecture review, storage and schema. Daniel, can you write up the options beforehand?
+[00:08:02] Daniel Okoye: I'll have a document with three options and a recommendation by Monday.
+[00:08:08] Marcus Webb: I'll bring the query patterns so we're not choosing storage in the abstract.
+[00:08:15] Sofia Alvarez: Perfect. Lea, mockups Wednesday including the seats question. Priya, can you own the tracking ticket and break it into a sprint plan once we've done architecture?
+[00:08:29] Priya Raman: That's ORION-118, I'll set it up after the review.
+[00:08:35] Sofia Alvarez: Then we're done. Recap: hourly not real-time, aggregates only no PII, responsive, no custom dashboards or scheduled reports in v1, seats display still open pending mockups, storage next week.
+[00:08:53] Lea Fontaine: One more thing before we drop. Who's the design partner list? I want to know if I'm designing for five enterprise accounts or five startups, because those are different products.
+[00:09:08] Sofia Alvarez: I don't have the list yet. I'll get it from sales this week.
+[00:09:14] Lea Fontaine: Please, because it changes my defaults.
+[00:09:18] Sofia Alvarez: Noted, I'll have it by Friday. Thanks everyone.

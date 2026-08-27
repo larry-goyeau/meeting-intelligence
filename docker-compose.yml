@@ -1,0 +1,35 @@
+# One service, because the app needs one: SQLite is embedded, so there is no
+# database container, no vector database container and nothing to wait for on
+# startup. `docker compose up` is the whole setup.
+#
+# Runs with no configuration at all — with no API key it starts in deterministic
+# offline mode. Set OPENAI_API_KEY in a .env file next to this one for real answers.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: meeting-intelligence:latest
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      CHAT_MODEL: ${CHAT_MODEL:-gpt-4.1-mini}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      LOG_FORMAT: json
+      DATA_DIR: /data
+    volumes:
+      # Named volume, so an ingested corpus survives a rebuild.
+      - corpus:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 4s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  corpus:

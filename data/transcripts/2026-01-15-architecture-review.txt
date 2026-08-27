@@ -1,0 +1,58 @@
+Title: Orion Architecture Review - Storage and Schema
+Date: 2026-01-15
+Participants: Daniel Okoye, Marcus Webb, Priya Raman, Tom Nakamura, Sofia Alvarez
+
+Daniel Okoye (00:00:08): I sent the document Monday. Quick version: three options for the analytics store. Option one, aggregate tables in our existing Postgres. Option two, DynamoDB with pre-computed partitions. Option three, ClickHouse, either self-hosted or their cloud.
+Marcus Webb (00:00:31): Before you give the recommendation, can I put the query patterns up? I think they decide this for us.
+Daniel Okoye (00:00:39): Go ahead.
+Marcus Webb (00:00:42): Four shapes. Time series for one account over a range, that's ninety percent of it. Top-N feature usage for one account. A cohort comparison, which is the only one that touches more than one account. And CSV export, which is just the time series unbounded.
+Tom Nakamura (00:01:06): What's the data volume? That's the question I care about, because I'm the one getting paged.
+Marcus Webb (00:01:14): Current event volume is about twelve million rows a day across all accounts. Aggregated hourly by account and feature, that collapses to roughly four hundred thousand rows a day.
+Tom Nakamura (00:01:31): Four hundred thousand a day is a hundred and fifty million a year. That's nothing. That's a Postgres table.
+Daniel Okoye (00:01:40): That's my recommendation, yes. Option one. We already run Postgres, we already know how to back it up, restore it, and monitor it. Adding ClickHouse means adding a system nobody here has operated in production.
+Priya Raman (00:01:58): Marcus, you've used ClickHouse before, haven't you?
+Marcus Webb (00:02:03): At my last job, yes. It's genuinely faster for this, by a lot. Cohort comparisons that take four seconds in Postgres take two hundred milliseconds. But Daniel's right that it's another thing to run, and I don't want to be the only person who understands it.
+Tom Nakamura (00:02:24): That's the part that decides it for me. Single-owner infrastructure is how you get a four-hour outage when that person is on a plane.
+Priya Raman (00:02:35): What about DynamoDB? You put it in the doc, so presumably it had an argument.
+Daniel Okoye (00:02:42): The argument is operational: it's managed, it scales without us thinking about it, and the access pattern is mostly key-value on account plus time bucket. The argument against is the cohort comparison. Any query that crosses accounts is either a scan or a second copy of the data with a different partition key.
+Marcus Webb (00:03:08): And the CSV export. Unbounded range on a partition key means pagination logic I'd rather not write.
+Priya Raman (00:03:17): So DynamoDB is out because of the one query shape that doesn't fit it.
+Daniel Okoye (00:03:23): It's out because it would force us to model around a limitation, and we'd carry that shape forever even when the reason is gone.
+Sofia Alvarez (00:03:34): I want to make sure we're not choosing Postgres just because it's familiar. What breaks first if we grow ten times?
+Tom Nakamura (00:03:45): At ten times, four million aggregate rows a day, one and a half billion a year. Partitioned by month, that's still fine for the time-series queries. The cohort query gets slow.
+Marcus Webb (00:04:01): The cohort query gets slow at three times, honestly. It's the one that scans.
+Daniel Okoye (00:04:09): Which is fine, because it's the one query that doesn't need to be interactive. Cohort comparison can be a pre-computed nightly rollup. Then nothing in the interactive path scans.
+Tom Nakamura (00:04:24): I'm satisfied with that.
+Sofia Alvarez (00:04:27): Then let's make the call. We're going with aggregate tables in the existing Postgres cluster, monthly partitions, and a nightly rollup for cohort comparisons. ClickHouse stays in the document as the escape hatch if the numbers change.
+Priya Raman (00:04:47): I'd like the trigger written down rather than left as a feeling. At what point do we revisit?
+Marcus Webb (00:04:55): Interactive p95 above one second, or aggregate volume above two million rows a day. Either one, we reopen it.
+Priya Raman (00:05:06): That I can put in the ticket.
+Daniel Okoye (00:05:10): Second thing, and this one is less clear-cut. Sofia wants natural-language search over the dashboard eventually. "Show me export usage for the finance team last quarter". If we're going to do that in the next six months, I want to know now, because it means embeddings, and embeddings mean a vector store.
+Sofia Alvarez (00:05:35): It's on the roadmap for H2. Not v1.
+Daniel Okoye (00:05:40): Then here's my proposal. pgvector is an extension on the Postgres we already have. If we turn it on now, on the same RDS instance, we get the capability with zero new infrastructure and we can prototype in H2 without a procurement conversation.
+Tom Nakamura (00:06:01): On the same instance as the transactional workload?
+Daniel Okoye (00:06:06): For a prototype, yes. It's one extension and one table.
+Tom Nakamura (00:06:12): I'd rather it were a read replica. But for a prototype I'll live with it.
+Marcus Webb (00:06:19): I'll push back slightly. Managed vector services are cheap now and they don't compete for the same buffer cache as the checkout path. But it's H2 and it's a prototype, so I'm not going to die on this hill.
+Daniel Okoye (00:06:37): The prototype tells us whether we need the real thing. Buying the real thing first is how you end up paying for a service nobody uses.
+Sofia Alvarez (00:06:47): Decision: we enable pgvector on the existing RDS instance for the H2 prototype, self-hosted, no new vendor. Tom, you've registered your concern and it's in the notes.
+Tom Nakamura (00:07:02): That's all I wanted.
+Priya Raman (00:07:05): Schema. Are we doing this now or is that another session?
+Daniel Okoye (00:07:11): Now, it's ten minutes. One fact table, account_id, hour bucket, feature key, and three measures: event count, distinct users, and total duration. Two dimension tables for accounts and features.
+Marcus Webb (00:07:29): Distinct users at the hour grain doesn't roll up. You can't sum hourly distinct counts to get a daily distinct count.
+Daniel Okoye (00:07:39): Good catch. So we either store a sketch, or we compute distinct counts at every grain we want to display.
+Marcus Webb (00:07:48): HyperLogLog. Postgres has an extension for it, and the error is under two percent, which for "active users this month" is invisible.
+Tom Nakamura (00:07:59): Another extension.
+Marcus Webb (00:08:02): It's a well-trodden one, and the alternative is four times the storage and a job for every grain.
+Daniel Okoye (00:08:10): I'll take HLL. I'll write it up in the schema doc with the accuracy caveat, and Lea will need to know that the number is approximate so the UI doesn't imply otherwise.
+Sofia Alvarez (00:08:24): Does that need a footnote in the product?
+Marcus Webb (00:08:28): For unique counts above a thousand, nobody notices. Under a thousand, HLL is exact anyway. So no.
+Sofia Alvarez (00:08:37): Then no footnote. Anything else?
+Priya Raman (00:08:41): Multi-region. Two of our design partners are in the EU.
+Daniel Okoye (00:08:47): Our main database is single-region us-east-1 today. Analytics doesn't change that. If the EU partners need data residency, that's a much bigger conversation than Orion.
+Sofia Alvarez (00:09:02): They haven't asked. We'll defer it and revisit if it comes up in the beta.
+Priya Raman (00:09:09): Deferred, noted, not decided. I'll flag it as a risk on the ticket rather than closing it.
+Sofia Alvarez (00:09:17): Fine. Actions: Daniel writes the schema doc with the HLL caveat by Friday. Marcus builds the nightly cohort rollup. Priya breaks ORION-118 into a sprint plan. Tom, anything you need from us?
+Tom Nakamura (00:09:34): Give me the partition and retention policy before it ships, not after. I'll size the instance once I have it.
+Daniel Okoye (00:09:43): I'll include it in the same doc.
+Sofia Alvarez (00:09:47): Thanks all.

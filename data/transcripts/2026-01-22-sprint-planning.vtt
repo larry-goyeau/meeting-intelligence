@@ -1,0 +1,147 @@
+WEBVTT
+
+NOTE Orion Sprint 1 Planning - 2026-01-22
+
+1
+00:00:03.000 --> 00:00:19.000
+<v Priya Raman>Sprint one for Orion. ORION-118 is broken into fourteen tickets. I want to walk the list, get estimates, and stop when we hit capacity rather than committing to everything and missing.
+
+2
+00:00:19.500 --> 00:00:28.000
+<v Daniel Okoye>What's capacity? We've got two people on this plus Marcus part-time, and I'm on call the second week.
+
+3
+00:00:28.500 --> 00:00:41.000
+<v Priya Raman>I'm budgeting sixty percent of your time in the on-call week. So call it fourteen effective days across the sprint for you, ten for Lea, and Marcus at four.
+
+4
+00:00:41.500 --> 00:00:55.000
+<v Lea Fontaine>Before we estimate, the seats mockups from last week. We picked option B in the design review, the two-number layout with the tooltip. That's now three tickets, not one.
+
+5
+00:00:55.500 --> 00:01:02.000
+<v Priya Raman>Three because?
+
+6
+00:01:02.500 --> 00:01:18.000
+<v Lea Fontaine>The layout, the tooltip content which needs copy review, and the empty state, because a brand new account has zero of both numbers and the two-number layout looks broken when both are zero.
+
+7
+00:01:18.500 --> 00:01:25.000
+<v Priya Raman>Fine, three tickets. Estimates?
+
+8
+00:01:25.500 --> 00:01:33.000
+<v Lea Fontaine>Two days, half a day, one day. The tooltip copy is blocked on Sofia signing off the wording.
+
+9
+00:01:33.500 --> 00:01:44.000
+<v Daniel Okoye>The aggregation job is the big one. I've split it into schema migration, the hourly job itself, and backfill. Two, four, and three days.
+
+10
+00:01:44.500 --> 00:01:52.000
+<v Priya Raman>Backfill is three days of work or three days of waiting?
+
+11
+00:01:52.500 --> 00:02:08.000
+<v Daniel Okoye>One day of work and two days of it running. Twelve million rows a day times ninety days of history is a billion source rows. I'd rather run it in chunks over a weekend than lock a table for an hour.
+
+12
+00:02:08.500 --> 00:02:16.000
+<v Tom Nakamura>Please run it in chunks. And please run it against the replica first so I can watch what it does to disk.
+
+13
+00:02:16.500 --> 00:02:22.000
+<v Daniel Okoye>That's the plan. Replica first, then production over a weekend.
+
+14
+00:02:22.500 --> 00:02:36.000
+<v Marcus Webb>My four days are the cohort rollup and the HLL sketches. The rollup is straightforward. The HLL part I want to timebox, because I've read the extension docs but never run it at this size.
+
+15
+00:02:36.500 --> 00:02:44.000
+<v Priya Raman>Timebox to what, and what's the fallback if it doesn't work?
+
+16
+00:02:44.500 --> 00:02:58.000
+<v Marcus Webb>Two days. Fallback is exact distinct counts at daily and monthly grain only, computed separately. More storage, more jobs, but no unknowns.
+
+17
+00:02:58.500 --> 00:03:05.000
+<v Priya Raman>Good. I'll note the fallback on the ticket so nobody has to reconstruct it later.
+
+18
+00:03:05.500 --> 00:03:20.000
+<v Daniel Okoye>One thing I want to raise. The API. I was going to build one endpoint per chart, and I've changed my mind. I think we want one query endpoint with a small typed request body.
+
+19
+00:03:20.500 --> 00:03:27.000
+<v Lea Fontaine>That's more work for me, not less. Every chart has to construct a query object.
+
+20
+00:03:27.500 --> 00:03:42.000
+<v Daniel Okoye>It's more work once and less work per chart after. With one endpoint per chart, chart eleven means a backend deploy. With a query endpoint, chart eleven is frontend only.
+
+21
+00:03:42.500 --> 00:03:54.000
+<v Lea Fontaine>I can see that. But I want the request type generated from the backend schema, not hand-written in TypeScript, because those will drift within a month.
+
+22
+00:03:54.500 --> 00:04:01.000
+<v Daniel Okoye>Agreed. I'll generate types from the OpenAPI spec as part of the build.
+
+23
+00:04:01.500 --> 00:04:12.000
+<v Priya Raman>Is that a decision? Because it changes two estimates and I'd like to write it down properly rather than discover it in code review.
+
+24
+00:04:12.500 --> 00:04:24.000
+<v Daniel Okoye>Yes. One query endpoint, typed request body, types generated from the spec. Add a day to the API ticket and take half a day off each chart ticket.
+
+25
+00:04:24.500 --> 00:04:32.000
+<v Priya Raman>Recorded as ORION-204. Where does that leave us on capacity?
+
+26
+00:04:32.500 --> 00:04:44.000
+<v Lea Fontaine>I count nine and a half days of my ten, which means I have zero slack, which means the first thing that goes wrong pushes something out.
+
+27
+00:04:44.500 --> 00:04:52.000
+<v Priya Raman>Then let's cut something now rather than pretending. What's the least valuable thing on your list?
+
+28
+00:04:52.500 --> 00:05:04.000
+<v Lea Fontaine>The empty state for the seats layout. It's real, but it only affects accounts in their first hour of existence, and it's a cosmetic problem.
+
+29
+00:05:04.500 --> 00:05:12.000
+<v Priya Raman>Moved to sprint two. That gives you a day of slack. Daniel, you're at fourteen of fourteen.
+
+30
+00:05:12.500 --> 00:05:26.000
+<v Daniel Okoye>The backfill is two of those days and it's unattended. I'm comfortable. If the on-call week is bad, the thing that slips is the backfill, and the backfill slipping hurts nobody.
+
+31
+00:05:26.500 --> 00:05:33.000
+<v Tom Nakamura>Agreed, nobody is looking at ninety-day-old charts in a beta.
+
+32
+00:05:33.500 --> 00:05:47.000
+<v Priya Raman>Then sprint one is committed. Twelve tickets, two moved out. Demo on the fifth of February, which is the same day as the postmortem for MI-412, so I'll find a different slot.
+
+33
+00:05:47.500 --> 00:05:55.000
+<v Marcus Webb>What was MI-412? I saw the channel but I was heads-down.
+
+34
+00:05:55.500 --> 00:06:08.000
+<v Tom Nakamura>Connection pool exhaustion on the primary last Thursday. Forty minutes of degraded writes. Not our doing, but it's why I keep asking about what runs on that instance.
+
+35
+00:06:08.500 --> 00:06:14.000
+<v Daniel Okoye>Understood. I'll be careful with the backfill.
+
+36
+00:06:14.500 --> 00:06:20.000
+<v Priya Raman>That's the sprint. I'll update the board this afternoon.

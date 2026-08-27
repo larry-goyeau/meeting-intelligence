@@ -1,0 +1,17 @@
+Title: Orion Standup (notes only, no recording)
+Date: 2026-02-09
+Participants: Priya Raman, Daniel Okoye, Lea Fontaine, Marcus Webb, Tom Nakamura
+
+Priya Raman: No recording today, I'm typing. Round the room.
+Daniel Okoye: Statement timeouts went in this morning, thirty seconds on every non-application role. No migration window needed in the end, it's a role-level setting. Next up is the query endpoint, which is the ORION-204 change we agreed in planning.
+Lea Fontaine: Charts one through four are done and behind the feature flag. The seats layout is in review. I'm blocked on the tooltip copy, Sofia still hasn't signed off the wording.
+Priya Raman: That's been blocked a week. I'll chase her today.
+Marcus Webb: HLL worked. Two days as timeboxed, error is under one percent at our cardinalities, so we're not using the fallback. Cohort rollup runs nightly at 02:00 and takes eleven minutes.
+Tom Nakamura: Replica is provisioned as of yesterday afternoon. It's sized with headroom for the vector index, per the postmortem. Marcus, you can move your queries whenever.
+Marcus Webb: I'll do it this afternoon. Then you can revoke primary access.
+Tom Nakamura: I'll revoke Friday, once you've confirmed everything runs.
+Priya Raman: Anything at risk for the demo?
+Lea Fontaine: Only the tooltip copy, and that's not a demo blocker, it's a ship blocker.
+Daniel Okoye: Nothing from me.
+Priya Raman: Then that's it. Two minutes, a personal record.
+Note: Sofia was out sick, tooltip copy still outstanding.

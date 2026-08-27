@@ -1,0 +1,90 @@
+{
+  "description": "Hand-written evaluation set over the bundled sample corpus. Each case names the evidence that must be retrieved for the question to be answerable, which makes retrieval measurable independently of which model is generating the prose.",
+  "cases": [
+    {
+      "id": "storage-decision",
+      "question": "Which database did we choose for the analytics store, and why not the alternatives?",
+      "mustRetrieve": ["aggregate tables in the existing Postgres cluster"],
+      "shouldMention": ["Postgres", "ClickHouse", "DynamoDB"],
+      "note": "The core decision. Should also surface why the two rejected options were rejected."
+    },
+    {
+      "id": "reversal",
+      "question": "Was any earlier decision reversed later, and what replaced it?",
+      "mustRetrieve": ["reversing the fifteenth of January decision", "pgvector on the existing RDS instance"],
+      "shouldMention": ["pgvector", "replica"],
+      "note": "Cross-meeting temporal reasoning. This is the case that fails if sources are ordered by score instead of chronologically."
+    },
+    {
+      "id": "rejected-not-decided",
+      "question": "Did we decide to use DynamoDB?",
+      "mustRetrieve": ["DynamoDB"],
+      "shouldMention": ["no"],
+      "note": "Discussed and rejected. A model that conflates discussion with decision gets this wrong."
+    },
+    {
+      "id": "owner-lookup",
+      "question": "Who is provisioning the analytics read replica and by when?",
+      "mustRetrieve": ["provisioning the analytics replica"],
+      "shouldMention": ["Tom", "next week"],
+      "note": "Action item with an owner and a vague-but-stated due date."
+    },
+    {
+      "id": "incident-cause",
+      "question": "What caused the MI-412 incident?",
+      "mustRetrieve": ["connection pool exhaustion"],
+      "shouldMention": ["pool", "primary"],
+      "note": "Exact identifier lookup; leans on lexical retrieval more than dense."
+    },
+    {
+      "id": "deferred-not-decided",
+      "question": "What was decided about multi-region and data residency?",
+      "mustRetrieve": ["defer it and revisit"],
+      "shouldMention": ["deferred"],
+      "note": "The correct answer is that nothing was decided. Tests whether deferral is reported as deferral."
+    },
+    {
+      "id": "objection-attribution",
+      "question": "Who objected to running the vector index on the primary database, and what was the objection?",
+      "mustRetrieve": ["buffer cache"],
+      "shouldMention": ["Tom", "Marcus"],
+      "note": "Attribution of a position to a person, across two meetings."
+    },
+    {
+      "id": "hll-tradeoff",
+      "question": "Why are the unique user counts approximate?",
+      "mustRetrieve": ["HyperLogLog"],
+      "shouldMention": ["HyperLogLog"],
+      "note": "A technical rationale buried mid-discussion, phrased in the question with none of the transcript's vocabulary."
+    },
+    {
+      "id": "capacity-cut",
+      "question": "What was cut from sprint one and why?",
+      "mustRetrieve": ["empty state"],
+      "shouldMention": ["empty state", "sprint two"],
+      "note": "Retrieval against the WebVTT-formatted transcript, verifying that format is not a second-class citizen."
+    },
+    {
+      "id": "unanswerable",
+      "question": "What is the company's parental leave policy?",
+      "expectRefusal": true,
+      "mustRetrieve": [],
+      "shouldMention": [],
+      "note": "Nothing in the corpus touches this. The correct behaviour is refusal, not a plausible invention."
+    },
+    {
+      "id": "out-of-corpus-detail",
+      "question": "How much does the managed vector service cost per month at production scale?",
+      "mustRetrieve": ["tens of dollars a month"],
+      "shouldMention": ["prototype"],
+      "note": "The transcript gives a prototype figure only. A good answer cites it and declines to extrapolate to production."
+    },
+    {
+      "id": "tooltip-blocker",
+      "question": "What is blocking the seats tooltip, and who owns it?",
+      "mustRetrieve": ["tooltip copy"],
+      "shouldMention": ["Sofia"],
+      "note": "Spans the timestamped planning meeting and the untimestamped standup notes."
+    }
+  ]
+}
