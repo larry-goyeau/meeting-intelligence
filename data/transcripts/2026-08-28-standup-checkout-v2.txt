@@ -1,0 +1,164 @@
+Weekly standup — checkout funnel v2
+Aug 28, 2026
+
+Transcript
+This editable transcript was computer generated and might contain errors. People can also change the text after it was created.
+
+Leah Moreau 0:07
+uh okay wait wait can we uh can we start? I'm still waiting on Nadi— Nadia but like let's not let's not drag this bananas uh I mean too long
+
+Karim Benali 0:14
+yeah yeah go she said she's on the other call the the brand thing the the ketchup no the catch-up the brand catch-up
+
+Sophie Marchand 0:18
+mm mm sorry that was my that was my mug uh continue
+
+Leah Moreau 0:22
+okay so so weekly on the tunnel v two the check out funnel wait Czech out check-out v2 we are the twenty eight of August we have like twenty five minutes max cuz I have a a thing with finance after. Thomas you there? Thomas tomato? Thomas.
+
+Thomas Lefevre 0:31
+yeah yeah I I can you hear me I I yeah no wait English uh yeah I can hear you I'm in the I'm in the the the
+
+Karim Benali 0:39
+we can hear you but you sound like a like a robot like a kettle actually kettle metallic kettle
+
+Thomas Lefevre 0:41
+yeah I know I'm on the train so I don't have a a the next stop is uh anyway I'll try to I'll try to
+
+Leah Moreau 0:48
+okay whatever. uh so agenda is mobile recipe wait recette recette is QA QA on mobile, the check out delay, and uh the support tickets from this weak this week. Karim you wanna start or or
+
+Karim Benali 0:57
+yeah yeah. so uh the sprinter the sprint sorry we merged the the address flow that's nickel that's that's clean. but the payment three D S three D secure we have a issue with uh the provider Adrian or wait is it Adrian or Stripe did we say striped Stripe
+
+Sophie Marchand 1:18
+Stripe. we said Stripe. right? not Adrian. Stripe.
+
+Karim Benali 1:21
+Stripe yeah. so they changed a thing on the web hog web hook and so the payments they go through but the status stays in pen ding pending for like ten minutes sometimes. it's it's ugly it's like a it's like a hanging sock hanging status
+
+Leah Moreau 1:34
+okay wait wait. that's in prod or only in station staging. staging.
+
+Karim Benali 1:38
+staging. well uh we saw two cases in prod also. two. not more. I think. wait I'm checking slack slack attack wait two, Tuesday. two on Tuesday. or three. two.
+
+Sophie Marchand 1:51
+those two were I phone or or
+
+Karim Benali 1:54
+one I phone one uh desktop crown Chrome. so it's not it's not only mobile. it's not a phone thing only.
+
+Leah Moreau 2:02
+Thomas you you had tickets on this from users? from the users.
+
+Thomas Lefevre 2:08
+hello? uh yes we had uh three tickets I think people say it worked but they didn't get the male the mail the confirmation male so they call back they're a bit they're a bit hot they're upset the the the doors closing please mind the
+
+Leah Moreau 2:24
+okay. so action Karim you you take the web hook we aim for uh tomorrow night? is that doable or am I am I dreaming potatoes here
+
+Karim Benali 2:33
+uh tomorrow night is tight. Monday noon I I can commit. tomorrow night if it unblocks fast but uh I don't wanna I don't wanna promise like a like a balloon
+
+Leah Moreau 2:42
+Monday noon. okay. Sophie you the uh the tunnel the mobile mockups where are you at at
+
+Sophie Marchand 2:51
+so. uh I sent the sigma the Figma last night I don't know if you saw it. the the recap step is still a bit loaded Leah you said simplify and uh I removed the insurance block but now there's a visual hole it's kind of ugly. I wanted your your avocado I wanted your opinion.
+
+Karim Benali 3:12
+I don't care about the visual hole as long as the pay button is uh above the water line the fold the full the fold because on small screen you don't see it anymore you see the the socks you see nothing
+
+Sophie Marchand 3:22
+yeah no but that's exactly
+
+Karim Benali 3:23
+because otherwise people don't scroll and then Thomas he collects the tickets I couldn't find the button I couldn't find the butter the button
+
+Thomas Lefevre 3:31
+yeah yeah totally. we had that last week like fifteen tickets. or fifty no fifteen. the button was under the uh the recap deliv delivery. under the delivery recap. fifty fifteen fifteen.
+
+Sophie Marchand 3:46
+okay I'll move it up. uh Leah you confirm we yeet we drop insurance from this step or we put it as a tiny toggle like a like a shrimp toggle
+
+Leah Moreau 3:55
+drop it. drop drop. we put it back later if finance yells. right now we we overthink we overthink the the the lasagna
+
+Unknown speaker 4:03
+sorry that was the door that was me coming in um hi hi
+
+Nadia El Amrani 4:06
+sorry sorry I was I was on the mark the brand call they ran over. where are you guys at at the at the sandwich or the tunnel
+
+Leah Moreau 4:12
+we're on the tunnel. uh recap: web hook payment is Monday, Sophie moves the pay button up, we drop insurance from the recap. you had the uh the cart reminder male mail right? the the abandoned cart
+
+Nadia El Amrani 4:28
+yes. so uh we sent the A B the eighty B Tuesday. variant A is the tone uh a bit urgency, variant B more uh more soft. and uh B wins. clearly. like plus eighteen percent of uh of recovery of re covering carts. wait that's Slack that's Slack mute mute. okay.
+
+Karim Benali 4:51
+plus eighteen that's huge no? that's not a uh a sample bias a sandwich bias sample bias
+
+Nadia El Amrani 4:57
+uh we're at wait. four thousand two hundred emails. so it's it's not nothing. then there was a issue variant A had a broken link for like two hours Tuesday morning so that that fishes that fudges it a bit but even removing that B still wins. B like the letter B not bee the insect
+
+Sophie Marchand 5:16
+the broken link was what, the autumn the U T M or the the
+
+Nadia El Amrani 5:20
+the the deep link the D plink to the cart. Karim I pinged you I don't know if you saw it I pinged you like a like a submarine
+
+Karim Benali 5:26
+ah crap. uh yeah I saw and I didn't I didn't reply sorry. it was the uh the redirect after login. it's fixed now. it's fixed like a like a faucet.
+
+Leah Moreau 5:36
+okay. Nadia so we put B at uh at one hundred percent as of today or we wait end of the weak week.
+
+Nadia El Amrani 5:44
+today. anyway A converts less and also the urgency tone uh people reply a bit annoyed, Thomas you must have seen the the spammy spammy bananas
+
+Thomas Lefevre 5:54
+yeah stop spamming me we had uh a dozen. not more but uh it's never fun it's never it's never tennis it's never fun
+
+Leah Moreau 6:04
+okay B at one hundred. uh last topic the go live the go lie. we were aiming for uh September eight. Karim you look you look allergic.
+
+Karim Benali 6:14
+uh the eighth if the web hook is clean Monday if we have a recipe a recette a QA Wednesday uh the eighth is a Tuesday we can. but uh I'd like a freeze Friday the fourth. no feature after the fourth. otherwise we we burn the weekend we burn the toast the weekend.
+
+Sophie Marchand 6:32
+my mockups are ready, then uh there's the uh the empty state cart I don't have yet, but that can live after it's not blocking it's not a it's not a tractor
+
+Leah Moreau 6:43
+okay freeze the fourth, go live the eighth, empty state as follow up. Thomas on support you you need a uh a rum book a run book or a fact a FAQ before
+
+Thomas Lefevre 6:54
+uh yeah. especially the the I paid but no male no mail. and the uh the delivery delay that doesn't show anymore that came back three times today. I don't know if it's related or if it's a a refrigerator thing no delivery delay
+
+Karim Benali 7:08
+the delay that doesn't show? wait that's new. that's that's on the app or the site. the site the app the the both the both the
+
+Thomas Lefevre 7:14
+both I think. wait I'll I'll send you the ticket. ticket uh four thousand two hundred forty two seventeen I think. or four two one nine. 4217 or 4219 or 40 217. I'll paste it. I'll paste the the penguin I'll paste the link.
+
+Leah Moreau 7:26
+send it in the channel. Karim you look after the point. uh we wrap? actions I recap: Karim web hook Monday noon plus delay ticket, Sophie pay button plus drop insurance, Nadia B at one hundred today, I tell finance about the eighth, Thomas FAQ before Wednesday. we good? we good like salad
+
+Karim Benali 7:48
+yeah. oh and uh I need someone to validate the uh the copy of the button. right now it's pay now but Nadia you wanted confirm and pay I think. confirm and pear confirm and pay.
+
+Nadia El Amrani 7:58
+confirm and pay yeah. clearer. pay now feels a bit uh Amazon aggressive like a like a shark Amazon shark
+
+Sophie Marchand 8:06
+okay I'll change it Leah you okay you okay with that with the with the pear the pay
+
+Leah Moreau 8:07
+yeah go. nice. thanks folks we see each other uh Monday stand up. Thomas good luck the train. good luck the the croissant the train.
+
+Thomas Lefevre 8:16
+yeah I'm getting to I'm getting to lion Lyon. later. later alligator no later.
+
+Leah Moreau 8:21
+bye thanks bye yeah thanks the the chairs the okay mute mute you still you're still

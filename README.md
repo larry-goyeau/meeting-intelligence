@@ -42,7 +42,7 @@ docker compose up --build     # http://localhost:3000
 Other commands:
 
 ```bash
-npm test          # 95 unit + integration tests, always offline, no network
+npm test          # 101 unit + integration tests, always offline, no network
 npm run eval      # retrieval quality against the hand-written answer key
 npm run eval -- --answers   # also generates answers and grades citations
 npm run gate      # calibrate the refusal thresholds for the active embedding model
@@ -54,10 +54,12 @@ npm run reset     # drop the local index
 
 ## What it does
 
-**Ingest** a transcript by upload, paste, or audio file. Five input shapes are
-parsed: `[00:12:34] Speaker: text`, `Speaker: text`, WebVTT, SRT, and speaker-only
-notes with no timestamps at all. The detected format is shown in the UI, so a bad
-parse is visible rather than silent.
+**Ingest** a transcript by upload, paste, or audio file. Six input shapes are parsed:
+`[00:12:34] Speaker: text`, `Speaker: text`, `Speaker (00:12:34): text`, the Google
+Meet / Docs export where `Leah Moreau 0:07` sits alone on a line above what she said,
+WebVTT, and SRT. The detected format is shown in the UI, so a bad parse is visible
+rather than silent — which matters more than it sounds, because a format that parses
+*almost* correctly is the worst case. See "the pasted transcript" below.
 
 ![Ingestion: drop files, paste text, or transcribe audio](docs/screenshots/06-upload.png)
 
@@ -266,31 +268,39 @@ dense     answerable min 0.221  refusable max 0.402  OVERLAPS by 0.181
 coverage  answerable min 0.306  refusable max 0.691  OVERLAPS by 0.385
 ```
 
-Two examples of why. "What did we decide about the Kubernetes migration?" scores
-**0.402** cosine — above six genuinely answerable questions — because the embedding
-is dominated by the *shape* of the question, which matches this corpus exactly,
-rather than by the absent subject. And "who won the football match last night?"
-reaches **0.69** lexical coverage, because "won", "match" and "night" all occur
-somewhere in five meetings. No constant fixes either case; they are not noise, they
-are what these signals measure.
+Three examples of why. "What did we decide about the Kubernetes migration?" scores
+**0.402** cosine — above eight genuinely answerable questions — because the embedding
+is dominated by the *shape* of the question, which matches this corpus exactly, rather
+than by the absent subject. "Who won the football match last night?" reaches **0.66**
+lexical coverage, because "won", "match" and "night" all occur somewhere in six
+meetings. And in the other direction, "when is the webhook fix due, and who owns it?"
+scores **0.363** cosine with **0.236** coverage — under both thresholds — about a
+meeting that spends a minute assigning exactly that, to Karim, for Monday noon. It
+loses because the transcription wrote "web hook" as two words, so the lexical signal
+missed, and 0.363 sits inside the overlap.
 
-So the architecture changed to match the evidence:
+No constant fixes those three at once. They are not noise; they are what these signals
+measure. So the architecture changed to match the evidence:
 
-- **The gate is cheap insurance, not the arbiter.** It refuses only what is
-  unambiguous: nothing retrieved, or not one chunk in the corpus clearing the cosine
-  floor. That second condition catches "how many vacation days do employees get?"
-  (dense 0.000) while costing nothing, and no answerable question on the calibration
-  set scored below 0.221, so nothing real is lost.
-- **The model decides the rest.** It reads the excerpts and judges them correctly —
-  including every case the gate could not. The remaining work was to *notice*:
-  `looksLikeDecline` recognises a first sentence that declines on the evidence, sets
-  a `declined` flag, and suppresses the "verify this" coverage warning, since a
-  refusal has nothing to cite. Before that, correct refusals were being filed as
-  answers that had forgotten to cite their sources.
+- **The gate refuses only when there is nothing to reason about.** Nothing survived
+  fusion, or not one chunk cleared the absolute cosine floor — meaning any lexical
+  hits are incidental word overlap. That catches "how many vacation days do employees
+  get?" (dense 0.000) for free. It makes no judgement about whether the evidence
+  answers the question, because it provably cannot.
+- **The model decides the rest.** It reads the excerpts and judges them correctly,
+  including every case the gate defers. The remaining work was to *notice*:
+  `looksLikeDecline` recognises a first sentence that declines on the evidence, sets a
+  `declined` flag, and suppresses the "verify this" coverage warning, since a refusal
+  has nothing to cite. Before that, correct refusals were filed as answers that had
+  forgotten to cite their sources.
 
-The trade-off is explicit: the model route costs a call and ~2 s, where a threshold
-would have been free. It is worth it because the threshold was wrong 6 times in 20
-and the model was wrong 0 times in 12.
+`npm run gate` now asserts the property that matters: **zero answerable questions
+refused**. Seven of nine unanswerable ones are deferred to the model, and it declines
+all seven.
+
+The trade-off is explicit and was chosen, not defaulted into: refusing an unanswerable
+question costs a model call and ~2 s, where a threshold would have been free. Worth it,
+because the threshold refused real answers and the model has not yet been wrong.
 
 ---
 
@@ -311,30 +321,34 @@ measures what can be checked against an answer key:
   presence is reported too and **labelled a weak proxy**, because that is what it
   is.
 
-With `gpt-4.1-mini` and `text-embedding-3-small`, over the 5-meeting / 30-chunk
+With `gpt-4.1-mini` and `text-embedding-3-small`, over the 6-meeting / 39-chunk
 sample corpus:
 
 ```
-cases                  12
+cases                  16
 mean retrieval recall  100.0%
-full recall            12/12
-refusal correctness    12/12   (gate or model decline)
+full recall            16/16
+refusal correctness    16/16   (gate or model decline)
   of which by gate     0    by model decline  1
-median retrieval       314 ms
-mean citation coverage 74.3%  (over 11 answers; 1 declined, nothing to cite)
+median retrieval       1091 ms
+mean citation coverage 78.3%  (over 15 answers; 1 declined, nothing to cite)
 invalid citations      0
-keyword presence       91.7%  (weak proxy, not accuracy)
-median end-to-end      2378 ms
-total estimated cost   $0.0228   (twelve questions, answers included)
+keyword presence       90.6%  (weak proxy, not accuracy)
+median end-to-end      3961 ms
+total estimated cost   $0.0309   (sixteen questions, answers included)
 ```
+
+Retrieval latency is almost entirely the round trip to embed the query; at 39 chunks
+the vector scan and BM25 are noise beside it. It varies from ~330 ms to ~1.1 s between
+runs for that reason, not because of corpus size.
 
 The harness exits non-zero below a 0.8 recall floor, so it can gate a pipeline.
 
-Answers are sampled at temperature 0.2, so one run is not a measurement. Across five
-runs, citation coverage ranged **60% to 76%** — it depends on how many sentences the
-model chooses to cite, which is the most style-sensitive thing measured here. Recall
-(12/12), refusal correctness (12/12), invalid citations (0) and keyword presence
-(91.7%) were identical in every run. Quote the range, not the best number.
+Answers are sampled at temperature 0.2, so one run is not a measurement. Across
+repeated runs, citation coverage ranged **60% to 78%** — it depends on how many
+sentences the model chooses to cite, which is the most style-sensitive thing measured
+here. Recall, refusal correctness and invalid citations were identical in every run.
+Quote the range, not the best number.
 
 Declines are excluded from the coverage average rather than scored zero: a refusal
 has nothing to cite, and counting it as uncited would fold "refused correctly" into a
@@ -346,10 +360,10 @@ enforced*, because hashed n-gram vectors score an unrelated question at ~0.15 an
 relevant one at ~0.20, so the cosine signal carries no information at all. Failing
 CI over a limitation of the stand-in would only teach us to lower the bar.
 
-### Two bugs this evaluation found that offline mode had hidden
+### Bugs measurement found that inspection had not
 
-Worth recording, because both were invisible until a real model ran and both were in
-code I had already convinced myself was correct.
+Worth recording, because each was invisible until something real ran against the code,
+and all of them were in code I had already convinced myself was correct.
 
 **Citations were parsed more narrowly than they were written.** The prompt asks for
 `[S2]` and, separately, for timestamps. The model reasonably combines them, and
@@ -368,6 +382,39 @@ exported in the shell, `npm test` used the real provider: 26 s instead of 2 s, i
 cost money, and — worst of the three — assertions about retrieval depended on a
 remote model that can change underneath them. Vitest now forces the offline provider
 regardless of the environment.
+
+**The pasted transcript.** The five formats I had built for were the five I had thought
+of. Pasting a real Google Meet transcript — speaker and timecode alone on a line, text
+below — produced something worse than a clean failure: `Speaker: text` matched it on
+the colon *inside the timecode*, so "Leah Moreau 0:07" became a speaker named
+"Leah Moreau 0" saying "07 uh okay wait". Six participants became **36**, one per
+person per minute, and **all 53 timestamps were lost** while the parser reported
+success. Meanwhile the exporter's "This transcript was computer generated" disclaimer
+became indexed, searchable content.
+
+Two things made this worse than a missing feature. It failed *silently* — the format
+badge said `plain`, which is a real format, so nothing looked wrong. And it degraded
+exactly the thing the product is for: with no timestamps, citations cannot link to a
+moment. The new `speaker-heading` parser needs a stricter test than the others, since
+it has no colon to anchor on and any short line ending in a clock time matches it;
+requiring every word to be capitalised distinguishes "Nadia El Amrani 4:06" from the
+utterance "Let's meet at 10:30".
+
+That transcript is now the sixth sample meeting, and four of the sixteen evaluation
+cases come from it — including the webhook question above, which is a regression test
+for the refusal gate. It is deliberately the worst transcript in the corpus:
+disfluent, bilingual, self-correcting, with numbers the speakers contradict
+themselves on. Three of those cases exist to check the system reports uncertainty it
+was given rather than resolving it silently — "two, or three, two" should become two,
+"4217 or 4219" should stay ambiguous, and a +18% A/B result should arrive with the
+broken-link caveat attached.
+
+![Answering over the noisy pasted transcript](docs/screenshots/08-noisy-transcript.png)
+
+The answer above is worth reading against the transcript it came from, which says
+"tomorrow night is tight. Monday noon I I can commit" and, forty lines later, "I'd
+like a freeze Friday the fourth". The proposal that was pushed back on does not
+appear in the answer.
 
 ---
 

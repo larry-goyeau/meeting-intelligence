@@ -84,22 +84,8 @@ export const config = {
      * offline hashed vectors, which are sparse and near-orthogonal by construction.
      */
     minDenseSimilarity: num("RETRIEVAL_MIN_DENSE_SIMILARITY", process.env.OPENAI_API_KEY ? 0.18 : 0.05),
-    /**
-     * Similarity at which a dense hit is strong enough to vouch for relevance on
-     * its own, overriding the lexical coverage gate. This is what stops a
-     * correctly-paraphrased question ("why are the counts fuzzy?") from being
-     * refused because it shares no vocabulary with the transcript.
-     *
-     * Set above the observed noise ceiling of each embedding space. The offline
-     * hashed vectors are noisy enough that nothing clears it, which is deliberate:
-     * in offline mode the lexical gate decides, because the hashed similarities
-     * genuinely cannot distinguish a relevant chunk from an irrelevant one.
-     */
-    strongDenseSimilarity: num("RETRIEVAL_STRONG_DENSE_SIMILARITY", process.env.OPENAI_API_KEY ? 0.38 : 0.95),
     /** Secondary gate on the fused score, for candidates that clear the dense floor but only barely. */
     minFusedScore: num("RETRIEVAL_MIN_SCORE", 0.008),
-    /** Specificity-weighted share of query terms that must appear in the retrieved text. */
-    minQueryCoverage: num("RETRIEVAL_MIN_QUERY_COVERAGE", 0.3),
     /** Only the strongest hits get their neighbours pulled in, or the prompt fills with context. */
     neighborSeeds: num("RETRIEVAL_NEIGHBOR_SEEDS", 3),
   },

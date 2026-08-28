@@ -18,6 +18,17 @@ const BRACKETED = /^[[(]?\s*(\d{1,3}:[0-5]\d(?::[0-5]\d)?(?:[.,]\d{1,3})?)\s*[\]
 /** `Alice (00:12:34): text` or `Alice [00:12:34]: text` */
 const SPEAKER_FIRST = /^([^:[(]{1,60}?)\s*[[(]\s*(\d{1,3}:[0-5]\d(?::[0-5]\d)?(?:[.,]\d{1,3})?)\s*[\])]\s*:\s*(.*)$/;
 
+/**
+ * `Leah Moreau 0:07` alone on a line, with the utterance on the lines below — what
+ * Google Meet and the Docs "Transcript" export produce, and the shape most likely to
+ * be pasted in from a real meeting.
+ *
+ * It has to be recognised before `SPEAKER_ONLY`, which otherwise matches it on the
+ * colon inside the timecode and yields the speaker "Leah Moreau 0" saying "07 uh
+ * okay wait" — a fresh participant per minute and every timestamp lost.
+ */
+const SPEAKER_HEADING = /^(.{1,60}?)\s+(\d{1,3}:[0-5]\d(?::[0-5]\d)?)\s*$/;
+
 /** `Alice: text` with no timecode at all. */
 const SPEAKER_ONLY = /^([^:]{1,60}?)\s*:\s*(.*)$/;
 
@@ -25,6 +36,9 @@ const SPEAKER_ONLY = /^([^:]{1,60}?)\s*:\s*(.*)$/;
 const CUE_RANGE = /^(\d{1,3}:[0-5]\d(?::[0-5]\d)?(?:[.,]\d{1,3})?)\s*-->\s*(\d{1,3}:[0-5]\d(?::[0-5]\d)?(?:[.,]\d{1,3})?)/;
 
 const HEADER = /^(title|date|meeting|participants|attendees|subject)\s*:\s*(.+)$/i;
+
+/** Exporter chrome that carries no meeting content. */
+const BOILERPLATE = /^transcript$|computer generated|change the text after|^recording\b/i;
 
 /**
  * Words that look like a speaker label to `SPEAKER_ONLY` but are really prose
@@ -51,6 +65,24 @@ const NOT_A_SPEAKER = new Set([
   "http",
   "https",
 ]);
+
+/** Lowercase words that legitimately appear inside a name. */
+const NAME_PARTICLES = new Set(["de", "del", "della", "van", "von", "der", "den", "du", "da", "di", "la", "le", "el", "bin", "al", "ibn"]);
+
+/**
+ * Stricter than `looksLikeSpeaker`, because `SPEAKER_HEADING` has no colon to anchor
+ * on: any short line ending in a timecode matches it, including the utterance "Let's
+ * meet at 10:30". Requiring every word to be capitalised — bar the particles in names
+ * like "Nadia El Amrani" — rejects prose while accepting names.
+ */
+function looksLikeName(candidate: string): boolean {
+  const trimmed = candidate.trim();
+  if (trimmed.length === 0 || trimmed.length > 60) return false;
+  if (/^unknown speaker$/i.test(trimmed)) return true;
+  const words = trimmed.split(/\s+/);
+  if (words.length > 5) return false;
+  return words.every((word) => /^[\p{Lu}]/u.test(word) || NAME_PARTICLES.has(word.toLowerCase()));
+}
 
 function looksLikeSpeaker(candidate: string): boolean {
   const trimmed = candidate.trim();
@@ -79,22 +111,64 @@ interface RawTurn {
 function detectFormat(lines: string[]): TranscriptFormat {
   let bracketed = 0;
   let speakerFirst = 0;
+  let heading = 0;
   let speakerOnly = 0;
   let cues = 0;
-  for (const line of lines) {
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
     if (CUE_RANGE.test(line)) cues += 1;
     else if (BRACKETED.test(line)) bracketed += 1;
     else if (SPEAKER_FIRST.test(line)) speakerFirst += 1;
+    // Before SPEAKER_ONLY, which also matches these lines but on the wrong colon.
+    else if (isHeadingLine(line)) heading += 1;
     else if (SPEAKER_ONLY.test(line)) speakerOnly += 1;
   }
   // The WEBVTT magic line is definitive; without it, two or more cue ranges are
   // enough to call it SRT. A single range could be prose containing an arrow.
   if (lines.some((line) => /^WEBVTT\b/i.test(line.trim())) && cues >= 1) return "vtt";
   if (cues >= 2) return "srt";
-  if (bracketed >= speakerFirst && bracketed >= speakerOnly && bracketed > 0) return "bracketed";
-  if (speakerFirst > 0 && speakerFirst >= speakerOnly) return "speaker-first";
+  if (bracketed >= speakerFirst && bracketed >= heading && bracketed >= speakerOnly && bracketed > 0) return "bracketed";
+  if (speakerFirst > 0 && speakerFirst >= heading && speakerFirst >= speakerOnly) return "speaker-first";
+  // Three is the smallest count that cannot be a coincidence of prose ending in a
+  // clock time, and a real transcript in this format has dozens.
+  if (heading >= 3 && heading >= speakerOnly) return "speaker-heading";
   if (speakerOnly > 0) return "plain";
   return "unknown";
+}
+
+function isHeadingLine(line: string): boolean {
+  const match = SPEAKER_HEADING.exec(line);
+  return match !== null && looksLikeName(match[1] ?? "");
+}
+
+/**
+ * `Name M:SS` heading, utterance on the following lines until the next heading.
+ *
+ * Blank lines do not end a turn here: the exporter wraps long utterances across
+ * paragraphs, and treating a blank line as a boundary would split one person's
+ * sentence into two unattributed turns.
+ */
+function parseHeadingBased(lines: string[]): RawTurn[] {
+  const turns: RawTurn[] = [];
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (line.length === 0) continue;
+
+    const match = SPEAKER_HEADING.exec(line);
+    if (match && looksLikeName(match[1] ?? "")) {
+      turns.push({
+        speaker: normaliseSpeaker(match[1] ?? ""),
+        startMs: parseTimecode(match[2] ?? ""),
+        endMs: null,
+        lines: [],
+      });
+      continue;
+    }
+
+    const current = turns.at(-1);
+    if (current) current.lines.push(line);
+  }
+  return turns;
 }
 
 function parseCueBased(lines: string[]): RawTurn[] {
@@ -236,7 +310,20 @@ export function parseTranscript(raw: string): ParsedTranscript {
   }
 
   let rawTurns: RawTurn[];
-  if (format === "vtt" || format === "srt") {
+  if (format === "speaker-heading") {
+    // Everything above the first heading is the exporter's preamble: the meeting
+    // name, the date, and a disclaimer about machine transcription. The first two are
+    // the only title and date such a file carries; the disclaimer must not become
+    // searchable content, or "was this generated automatically" retrieves it.
+    const firstHeading = body.findIndex((line) => isHeadingLine(line.trim()));
+    for (const rawLine of body.slice(0, firstHeading === -1 ? 0 : firstHeading)) {
+      const line = rawLine.trim();
+      if (line.length === 0 || BOILERPLATE.test(line)) continue;
+      if (date === null && looksLikeDate(line)) date = normaliseDate(line);
+      else if (title === null) title = line;
+    }
+    rawTurns = parseHeadingBased(body.slice(firstHeading === -1 ? 0 : firstHeading));
+  } else if (format === "vtt" || format === "srt") {
     rawTurns = parseCueBased(body);
   } else {
     const result = parseLineBased(body);
@@ -294,13 +381,22 @@ function unique(values: string[]): string[] {
   return [...new Set(values.map((v) => v.trim()).filter(Boolean))];
 }
 
+/** A short line that is a date and nothing else, like the `Aug 28, 2026` under a title. */
+function looksLikeDate(line: string): boolean {
+  if (line.length > 30 || !/\d/.test(line)) return false;
+  return !Number.isNaN(new Date(line).getTime());
+}
+
 /** Best-effort ISO normalisation; unparseable dates are kept verbatim rather than dropped. */
 function normaliseDate(value: string): string {
   const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
   const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
-  return value;
+  if (Number.isNaN(parsed.getTime())) return value;
+  // Local components, not toISOString: "Aug 28, 2026" parses as local midnight, and
+  // converting to UTC from any zone ahead of it reports the 27th.
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
 }
 
 /** Renders turns the way the model and the transcript viewer both see them. */

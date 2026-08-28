@@ -29,7 +29,7 @@ export interface ParsedTranscript {
   warnings: string[];
 }
 
-export type TranscriptFormat = "bracketed" | "speaker-first" | "vtt" | "srt" | "plain" | "unknown";
+export type TranscriptFormat = "bracketed" | "speaker-first" | "speaker-heading" | "vtt" | "srt" | "plain" | "unknown";
 
 /** A retrieval unit: a window of consecutive turns. */
 export interface Chunk {

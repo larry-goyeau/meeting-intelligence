@@ -135,3 +135,83 @@ describe("parseTranscript", () => {
     expect(parsed.turns[1]?.text).toBe("Two.");
   });
 });
+
+/**
+ * The Google Meet / Docs export, which is what someone pasting from a real meeting is
+ * most likely to have. Before it was recognised, `SPEAKER_ONLY` matched on the colon
+ * inside the timecode: "Leah Moreau 0:07" became the speaker "Leah Moreau 0" saying
+ * "07 uh okay wait", inventing a participant per minute and losing every timestamp.
+ */
+describe("parseTranscript — speaker heading on its own line", () => {
+  const transcript = [
+    "Weekly standup — checkout funnel v2",
+    "Aug 28, 2026",
+    "",
+    "Transcript",
+    "This editable transcript was computer generated and might contain errors.",
+    "",
+    "Leah Moreau 0:07",
+    "okay can we start? I'm still waiting on Nadia.",
+    "",
+    "Karim Benali 1:21",
+    "they changed the webhook so the status stays pending for ten minutes.",
+    "",
+    "Nadia El Amrani 4:06",
+    "sorry I was on the brand call.",
+    "",
+    "Unknown speaker 4:03",
+    "sorry that was the door.",
+  ].join("\n");
+
+  it("recognises the format and keeps speakers and timestamps intact", () => {
+    const parsed = parseTranscript(transcript);
+    expect(parsed.format).toBe("speaker-heading");
+    expect(parsed.turns).toHaveLength(4);
+    expect(parsed.turns.map((turn) => turn.speaker)).toEqual([
+      "Leah Moreau",
+      "Karim Benali",
+      "Nadia El Amrani",
+      "Unknown speaker",
+    ]);
+    expect(parsed.turns[0]?.startMs).toBe(7000);
+    expect(parsed.turns[1]?.startMs).toBe(81000);
+    expect(parsed.turns.every((turn) => turn.startMs !== null)).toBe(true);
+  });
+
+  it("takes the title and date from the preamble and drops the exporter's disclaimer", () => {
+    const parsed = parseTranscript(transcript);
+    expect(parsed.title).toBe("Weekly standup — checkout funnel v2");
+    // Local date parts, not UTC: this was off by one day in zones ahead of UTC.
+    expect(parsed.date).toBe("2026-08-28");
+    expect(parsed.turns.map((turn) => turn.text).join(" ")).not.toMatch(/computer generated/i);
+  });
+
+  it("keeps a wrapped utterance in one turn", () => {
+    const parsed = parseTranscript(
+      ["Alice Dupont 0:10", "first paragraph of the same utterance.", "", "still the same person talking.", "", "Bob Martin 0:30", "next speaker.", "", "Carol Weiss 0:45", "third."].join("\n"),
+    );
+    expect(parsed.turns).toHaveLength(3);
+    expect(parsed.turns[0]?.text).toBe("first paragraph of the same utterance. still the same person talking.");
+  });
+
+  /**
+   * The pattern has no colon to anchor on, so any short line ending in a clock time
+   * matches it. Capitalisation is what separates a name from a sentence.
+   */
+  it("does not mistake prose ending in a clock time for a speaker", () => {
+    const parsed = parseTranscript(
+      ["Alice: Let's meet at 10:30", "Bob: Works for me, or 11:00", "Alice: See you at 10:30"].join("\n"),
+    );
+    expect(parsed.format).toBe("plain");
+    expect(parsed.turns).toHaveLength(3);
+    expect(parsed.turns[0]?.text).toBe("Let's meet at 10:30");
+  });
+
+  it("still prefers the bracketed format when both could match", () => {
+    const parsed = parseTranscript(
+      ["[00:00:07] Leah Moreau: one.", "[00:01:21] Karim Benali: two.", "[00:02:00] Leah Moreau: three."].join("\n"),
+    );
+    expect(parsed.format).toBe("bracketed");
+    expect(parsed.turns[0]?.speaker).toBe("Leah Moreau");
+  });
+});

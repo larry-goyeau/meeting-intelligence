@@ -1,13 +1,17 @@
 /**
- * Relevance-gate calibration.
+ * Relevance-signal calibration.
  *
- * The gate's two thresholds are the only numbers in the system that must be set
- * per embedding model: "unrelated" sits at a different cosine similarity in every
- * embedding space. Guessing them, or fitting them to the one case that happens to
- * fail, is how a refusal gate ends up either never firing or refusing real
- * questions. This prints both signals for every evaluation case plus extra
- * out-of-corpus questions, so a threshold can be chosen where the two populations
- * actually separate.
+ * This exists to answer one question: could a threshold on these signals decide
+ * answerability? It prints both for every evaluation case plus out-of-corpus
+ * questions, and reports whether the two populations separate at all.
+ *
+ * The answer, on every embedding model tried so far, is no — which is why the gate
+ * now refuses only when there is no evidence and the model decides the rest. Rerun it
+ * after changing embedding model or corpus: "unrelated" sits at a different cosine
+ * similarity in every embedding space, and the absolute floor does need setting.
+ *
+ * Expect the refusable rows to read "answered" here. That is the design, not a
+ * regression: this tool measures the gate alone, and the gate deliberately defers.
  *
  * Usage: npm run gate
  */
@@ -35,9 +39,7 @@ const OUT_OF_CORPUS = [
 async function main() {
   const provider = providerSummary();
   console.log(`provider ${provider.id} — ${provider.embeddingModel} (${provider.embeddingDimensions}d)`);
-  console.log(
-    `thresholds: minDense=${config.retrieval.minDenseSimilarity} strongDense=${config.retrieval.strongDenseSimilarity} minCoverage=${config.retrieval.minQueryCoverage}\n`,
-  );
+  console.log(`absolute dense floor: ${config.retrieval.minDenseSimilarity}\n`);
 
   const repository = new Repository(createMemoryDb());
   const filenames = (await fs.readdir(config.sampleDir)).filter((name) => /\.(txt|md|vtt|srt)$/i.test(name)).sort();
@@ -82,7 +84,10 @@ async function main() {
   console.log("\n─── separation ───");
   report("dense", answerable.map((r) => r.dense), refusable.map((r) => r.dense));
   report("coverage", answerable.map((r) => r.coverage), refusable.map((r) => r.coverage));
-  console.log(`\nwrong decisions: ${rows.filter((row) => row.shouldRefuse !== row.gated).length}/${rows.length}`);
+  const deferred = rows.filter((row) => row.shouldRefuse && !row.gated).length;
+  const wronglyRefused = rows.filter((row) => !row.shouldRefuse && row.gated).length;
+  console.log(`\ndeferred to the model: ${deferred}/${rows.filter((r) => r.shouldRefuse).length} unanswerable questions`);
+  console.log(`wrongly refused:       ${wronglyRefused}  (must be 0 — the gate has no business refusing these)`);
 }
 
 /**

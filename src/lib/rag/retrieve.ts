@@ -113,26 +113,29 @@ export async function retrieve(
     Math.max(1, repository.countChunks()),
   );
   /**
-   * The gate is deliberately cheap insurance, not the arbiter of answerability.
+   * The gate refuses only when there is no evidence to reason about. It does not try
+   * to judge whether the evidence answers the question.
    *
-   * Calibration against real embeddings (`npm run gate`) showed neither signal
-   * separates the two populations: a question shaped like the corpus scores 0.40
-   * cosine on a subject the corpus never mentions, above several genuinely
-   * answerable questions, and lexical coverage reaches 0.69 for "who won the
-   * football match last night" because those words all occur somewhere. So the gate
-   * only catches what is unambiguous, and the model — which reads the excerpts and
-   * judges them correctly — decides the rest, with `looksLikeDecline` recognising
-   * when it has declined.
+   * It used to, with a composite condition on cosine similarity and lexical coverage.
+   * Calibration against real embeddings (`npm run gate`) showed why that cannot work:
+   * the two populations overlap badly, since a question shaped like the corpus scores
+   * 0.40 cosine on a subject never mentioned, and "who won the football match last
+   * night" reaches 0.69 coverage because those words all occur somewhere.
    *
-   * `dense.length === 0` is that unambiguous case: not one chunk in the corpus
-   * cleared the absolute similarity floor, so there is no semantic evidence at all
-   * and any lexical hits are incidental word overlap. On the calibration set every
-   * answerable question scored at least 0.22, so nothing real is lost here.
+   * A pasted real-world transcript then showed the cost directly. "When is the
+   * webhook fix due, and who owns it?" scored 0.363 cosine and 0.214 coverage — under
+   * both thresholds, so refused — on a meeting that spends a minute assigning exactly
+   * that, to Karim, for Monday noon. It lost because the transcription wrote "web
+   * hook" as two words, so the lexical signal missed, and 0.363 sits inside the
+   * measured overlap. No threshold recovers that case without admitting the
+   * unanswerable ones.
+   *
+   * So the model decides, and `looksLikeDecline` notices when it declines. The gate
+   * keeps only the two conditions that need no judgement: nothing survived fusion, or
+   * not one chunk in the corpus cleared the absolute similarity floor, which means
+   * any lexical hits are incidental word overlap.
    */
-  const gated =
-    selected.length === 0 ||
-    dense.length === 0 ||
-    (maxDenseScore < config.retrieval.strongDenseSimilarity && coverage < config.retrieval.minQueryCoverage);
+  const gated = selected.length === 0 || dense.length === 0;
 
   const relevance = {
     maxDenseScore: Number(maxDenseScore.toFixed(4)),

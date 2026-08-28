@@ -85,6 +85,34 @@
       "mustRetrieve": ["tooltip copy"],
       "shouldMention": ["Sofia"],
       "note": "Spans the timestamped planning meeting and the untimestamped standup notes."
+    },
+    {
+      "id": "noisy-owner-and-due-date",
+      "question": "When is the webhook fix due, and who owns it?",
+      "mustRetrieve": ["Monday noon"],
+      "shouldMention": ["Karim", "Monday"],
+      "note": "Regression test for the refusal gate. This scored 0.363 cosine and 0.214 coverage - under both of the thresholds the gate used to refuse on - because the transcription writes 'web hook' as two words. It is plainly answerable, and refusing it is what proved a threshold cannot decide answerability. Also checks that the rejected proposal ('tomorrow night') is not reported as the commitment."
+    },
+    {
+      "id": "noisy-contradictory-numbers",
+      "question": "How many payment issues were seen in production, and on which devices?",
+      "mustRetrieve": ["one I phone one"],
+      "shouldMention": ["two", "Chrome"],
+      "note": "The speaker says 'two, or three, two' and self-corrects. A good answer settles on two and names both devices rather than averaging the confusion."
+    },
+    {
+      "id": "noisy-ab-test-caveat",
+      "question": "Which email variant won the A/B test, and was the result trustworthy?",
+      "mustRetrieve": ["broken link"],
+      "shouldMention": ["B", "4,200"],
+      "note": "Tests whether a stated caveat survives summarisation: variant A had a broken link for two hours, which the answer should surface alongside the +18% headline."
+    },
+    {
+      "id": "noisy-uncertain-identifier",
+      "question": "What is the ticket number for the delivery delay bug?",
+      "mustRetrieve": ["4217"],
+      "shouldMention": ["4219"],
+      "note": "The speaker guesses '4217 or 4219' and never confirms. The correct answer preserves the uncertainty instead of picking one and sounding authoritative."
     }
   ]
 }

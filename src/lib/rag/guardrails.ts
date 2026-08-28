@@ -159,9 +159,10 @@ export function stripInvalidCitations(answer: string, sources: Source[]): string
     .replace(CITATION_PATTERN, (token) => {
       // Walk in order so a span attached to a dropped label goes with it, rather
       // than being re-attached to whichever source happens to survive.
+      const { items } = parseCitationToken(token);
       const kept: string[] = [];
       let lastLabelValid = false;
-      for (const item of parseCitationToken(token).items) {
+      for (const item of items) {
         if (item.kind === "label") {
           lastLabelValid = validLabels.has(item.value);
           if (lastLabelValid) kept.push(item.value);
@@ -169,6 +170,11 @@ export function stripInvalidCitations(answer: string, sources: Source[]): string
           kept.push(item.value);
         }
       }
+      // Untouched markers are returned verbatim. Rebuilding them flattened the
+      // model's own separators — `[S6, 00:02–02:42; S10, 00:06–06:32]` came back with
+      // a comma in place of the semicolon, losing which span belonged to which
+      // source for anyone reading the text rather than the rendered pills.
+      if (kept.length === items.length) return token;
       const hasLabel = kept.some((part) => /^S\d+$/.test(part));
       return hasLabel ? `[${kept.join(", ")}]` : "";
     })

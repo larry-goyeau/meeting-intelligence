@@ -168,6 +168,11 @@ describe("stripInvalidCitations", () => {
     );
   });
 
+  it("leaves a valid marker byte-identical, including the model's own separators", () => {
+    const answer = "They chose Postgres [S1, 00:02:24\u201302:42; S2, 00:06:04\u201306:32].";
+    expect(stripInvalidCitations(answer, sources)).toBe(answer);
+  });
+
   it("drops a span along with the invented label it was attached to", () => {
     expect(stripInvalidCitations("They chose Postgres [S1, 00:04:10; S9, 00:09:30].", sources)).toBe(
       "They chose Postgres [S1, 00:04:10].",
