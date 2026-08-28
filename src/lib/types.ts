@@ -125,11 +125,17 @@ export interface GuardrailVerdict {
   citationCoverage: number;
   /** Citations the model invented that point at no real source. Stripped before display. */
   invalidCitations: string[];
+  /**
+   * The model judged the evidence insufficient and said so. Tracked separately from
+   * a gate refusal: this one cost a model call but is the more reliable of the two.
+   */
+  declined: boolean;
   flags: GuardrailFlag[];
 }
 
 export type GuardrailFlag =
   | "no-evidence"
+  | "declined"
   | "low-citation-coverage"
   | "invalid-citations"
   | "out-of-scope"

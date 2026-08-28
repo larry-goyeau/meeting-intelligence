@@ -189,6 +189,9 @@ function AssistantMessage({
   const validLabels = new Set((message.meta?.sources ?? []).map((source) => source.label));
   const verdict = message.done?.verdict;
   const lowCoverage = verdict?.flags.includes("low-citation-coverage");
+  // The model read the evidence and declined. Worth its own badge: retrieval did run
+  // and did return sources, so the route badge alone would read as a normal answer.
+  const declined = verdict?.declined ?? false;
 
   return (
     <div className="fade-rise space-y-2.5">
@@ -212,6 +215,11 @@ function AssistantMessage({
           <Badge tone={message.meta?.route === "refused" ? "warn" : "neutral"} title="Which answering strategy was used">
             {message.meta?.route === "whole-meeting" ? "full transcript" : message.meta?.route === "refused" ? "no evidence" : "hybrid retrieval"}
           </Badge>
+          {declined ? (
+            <Badge tone="warn" title="The model judged the retrieved excerpts insufficient and said so">
+              no answer in sources
+            </Badge>
+          ) : null}
           {message.meta && message.meta.sources.length > 0 ? (
             <Badge title="Excerpts placed in the prompt">{message.meta.sources.length} sources</Badge>
           ) : null}
@@ -222,7 +230,7 @@ function AssistantMessage({
           {message.done.usage.estimatedCostUsd > 0 ? (
             <Badge title="Estimated from a static price table">${message.done.usage.estimatedCostUsd.toFixed(5)}</Badge>
           ) : null}
-          {!lowCoverage && verdict && verdict.citationCoverage >= 1 && validLabels.size > 0 ? (
+          {!lowCoverage && !declined && verdict && verdict.citationCoverage >= 1 && validLabels.size > 0 ? (
             <Badge tone="good" title="Every assertion carries a citation">
               fully cited
             </Badge>

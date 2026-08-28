@@ -42,9 +42,10 @@ docker compose up --build     # http://localhost:3000
 Other commands:
 
 ```bash
-npm test          # 88 unit + integration tests, offline, no network
+npm test          # 95 unit + integration tests, always offline, no network
 npm run eval      # retrieval quality against the hand-written answer key
 npm run eval -- --answers   # also generates answers and grades citations
+npm run gate      # calibrate the refusal thresholds for the active embedding model
 npm run lint && npm run typecheck
 npm run reset     # drop the local index
 ```
@@ -73,6 +74,15 @@ Every assertion carries a `[S1]`-style citation; clicking one opens the transcri
 scrolled to that turn and highlights it, so any claim can be checked in two clicks.
 
 ![Clicking a citation opens the transcript at the cited turn](docs/screenshots/05-transcript-viewer.png)
+
+**Decline** when the corpus does not hold the answer, and say so in the interface
+rather than only in the prose. Below, retrieval ran and returned thirteen excerpts —
+the question is close enough in shape to fool a similarity threshold — but the model
+judged them insufficient, and the amber badge reports that as the outcome. Note also
+the answer above it carrying a coverage warning: honest measurement applies to the
+answers too, not just the refusals.
+
+![A declined question, badged as having no answer in the sources](docs/screenshots/07-declined.png)
 
 **Inspect** any answer. The trace panel shows the route taken, the rewritten query,
 per-stage latency, how many candidates each retriever produced, the relevance
@@ -226,8 +236,8 @@ The failure that destroys trust in a meeting assistant is not an unsafe answer, 
 is a confident invented one. There is no content to moderate here — the corpus is
 the user's own meetings — so the guardrails target grounding:
 
-- **No evidence → refuse before calling the model.** Cheaper and far more reliable
-  than hoping the model declines on its own.
+- **No evidence → refuse before calling the model.** Free, and it needs no
+  judgement: there is nothing to reason about.
 - **Invalid citations are stripped and counted.** Models invent `[S14]` when ten
   sources were given; the count surfaces in the UI so it lends no false authority.
 - **Citation coverage is measured, not enforced.** Below 50% the UI shows a "verify
@@ -237,19 +247,50 @@ the user's own meetings — so the guardrails target grounding:
   anything someone said out loud. Sources are delimited and declared to be data;
   ingested text that reads like instructions is flagged at ingestion.
 
-The non-obvious part is making "I don't know" *reachable at all*. A top-k search
-always returns k results however unrelated, and rank fusion then hands them
-respectable-looking scores. So refusal needs an absolute signal, and the gate uses
-two independent ones, refusing only when both say no:
+### Making "I don't know" reachable — and who actually decides it
 
-- an **absolute cosine floor** on the best dense hit, and
-- **specificity-weighted lexical coverage**: how much of the query's vocabulary
-  actually appears in the retrieved text, weighting rare terms above common ones.
+A top-k search always returns k results however unrelated, and rank fusion then
+hands them respectable-looking scores. So refusal needs some absolute signal. I
+first built the whole decision as a threshold gate on two of them: an **absolute
+cosine floor** on the best dense hit, and **specificity-weighted lexical coverage**,
+meaning how much of the query's vocabulary appears in the retrieved text, weighting
+rare terms above common ones.
 
-Two signals rather than one because each covers the other's blind spot. A correctly
-paraphrased question ("why are the counts fuzzy?") shares no vocabulary with the
-transcript and would be refused by coverage alone; a question in the corpus's own
-words but semantically off would slip past the cosine floor.
+Then I measured it. `npm run gate` prints both signals for every evaluation case
+plus eight questions the corpus cannot answer, and reports whether a threshold
+separating the two populations exists at all. With `text-embedding-3-small`, it does
+not:
+
+```
+dense     answerable min 0.221  refusable max 0.402  OVERLAPS by 0.181
+coverage  answerable min 0.306  refusable max 0.691  OVERLAPS by 0.385
+```
+
+Two examples of why. "What did we decide about the Kubernetes migration?" scores
+**0.402** cosine — above six genuinely answerable questions — because the embedding
+is dominated by the *shape* of the question, which matches this corpus exactly,
+rather than by the absent subject. And "who won the football match last night?"
+reaches **0.69** lexical coverage, because "won", "match" and "night" all occur
+somewhere in five meetings. No constant fixes either case; they are not noise, they
+are what these signals measure.
+
+So the architecture changed to match the evidence:
+
+- **The gate is cheap insurance, not the arbiter.** It refuses only what is
+  unambiguous: nothing retrieved, or not one chunk in the corpus clearing the cosine
+  floor. That second condition catches "how many vacation days do employees get?"
+  (dense 0.000) while costing nothing, and no answerable question on the calibration
+  set scored below 0.221, so nothing real is lost.
+- **The model decides the rest.** It reads the excerpts and judges them correctly —
+  including every case the gate could not. The remaining work was to *notice*:
+  `looksLikeDecline` recognises a first sentence that declines on the evidence, sets
+  a `declined` flag, and suppresses the "verify this" coverage warning, since a
+  refusal has nothing to cite. Before that, correct refusals were being filed as
+  answers that had forgotten to cite their sources.
+
+The trade-off is explicit: the model route costs a call and ~2 s, where a threshold
+would have been free. It is worth it because the threshold was wrong 6 times in 20
+and the model was wrong 0 times in 12.
 
 ---
 
@@ -270,30 +311,53 @@ measures what can be checked against an answer key:
   presence is reported too and **labelled a weak proxy**, because that is what it
   is.
 
-Current, offline mode, over the 5-meeting / 30-chunk sample corpus:
+With `gpt-4.1-mini` and `text-embedding-3-small`, over the 5-meeting / 30-chunk
+sample corpus:
 
 ```
 cases                  12
 mean retrieval recall  100.0%
 full recall            12/12
-refusal correctness    11/12   (reported only — see below)
-median retrieval       3 ms
-mean citation coverage 100.0%
+refusal correctness    12/12   (gate or model decline)
+  of which by gate     0    by model decline  1
+median retrieval       333 ms
+mean citation coverage 75.7%
 invalid citations      0
+keyword presence       91.7%  (weak proxy, not accuracy)
+median end-to-end      2781 ms
+total estimated cost   $0.0232   (twelve questions, answers included)
 ```
 
 The harness exits non-zero below a 0.8 recall floor, so it can gate a pipeline.
 
-**The one failure, stated plainly.** One "unanswerable" case ("what is the company's
-parental leave policy?") is not refused in offline mode, and refusal correctness is
-therefore *reported but not enforced* unless a real embedding model is configured.
-The reason is the offline stand-in, not the gate: hashed n-gram vectors score an
-unrelated question at ~0.15 and a relevant one at ~0.20, so no cosine threshold
-separates them, and lexical coverage alone has to carry the decision — which it
-cannot, because that question shares "policy", "leave" and "company" with a corpus
-that discusses retention policies. Failing CI over a limitation of the mock would
-only teach us to lower the bar. With a real embedding model both signals work and
-the case refuses correctly.
+Offline mode reaches the same 100% retrieval recall — that metric is
+model-independent by design — but refusal correctness there is *reported and not
+enforced*, because hashed n-gram vectors score an unrelated question at ~0.15 and a
+relevant one at ~0.20, so the cosine signal carries no information at all. Failing
+CI over a limitation of the stand-in would only teach us to lower the bar.
+
+### Two bugs this evaluation found that offline mode had hidden
+
+Worth recording, because both were invisible until a real model ran and both were in
+code I had already convinced myself was correct.
+
+**Citations were parsed more narrowly than they were written.** The prompt asks for
+`[S2]` and, separately, for timestamps. The model reasonably combines them, and
+prefers spans: `[S6, 00:01:40–02:42; S8, 00:04:27–05:35]`. My matcher accepted only
+brackets containing labels alone. The measured effect was mean citation coverage of
+**15.3%** with **zero** invalid citations — a contradiction that gives the bug away,
+since markers were being *missed*, not rejected. The real damage was in the UI, which
+used its own copy of the same narrow pattern: every timestamped citation rendered as
+plain grey text instead of a clickable pill, so the one feature this product exists
+for silently stopped working on most real answers. Fixing the pattern and sharing it
+between the grader and the renderer moved coverage to **75.7%** without touching a
+single answer. The remaining gap is real and now honestly measured.
+
+**The test suite was quietly running against the live API.** With `OPENAI_API_KEY`
+exported in the shell, `npm test` used the real provider: 26 s instead of 2 s, it
+cost money, and — worst of the three — assertions about retrieval depended on a
+remote model that can change underneath them. Vitest now forces the offline provider
+regardless of the environment.
 
 ---
 
@@ -323,10 +387,11 @@ observability that actually shortens a debugging loop.
 source cards render while tokens are still arriving, then `delta`s, then `done`
 (verdict, usage, timings). Post-generation checks do not hold the stream back.
 
-**Tests** — 88 across 6 files: parsing per format, chunk boundaries and overlap,
+**Tests** — 95 across 6 files: parsing per format, chunk boundaries and overlap,
 fusion/MMR/budget-packing (including a regression test for the RRF bias above),
-guardrails, and integration tests that ingest, retrieve, stream and assert a trace
-was recorded. All offline and deterministic.
+guardrails and citation grammar, and integration tests that ingest, retrieve, stream
+and assert a trace was recorded. Forced offline, so they are deterministic, free and
+fail for one reason only.
 
 ---
 
@@ -374,6 +439,13 @@ costs a round-trip only when history exists.
 
 - Offline mode cannot judge relevance well enough to refuse reliably (measured and
   explained above). Set an API key for real behaviour.
+- Refusal on the hard cases costs a model call, because the cheap signals provably
+  cannot make that call. A fine-tuned classifier over the retrieved evidence would
+  be the way to get it back for free.
+- `looksLikeDecline` is pattern matching over the first sentence. It errs towards
+  under-detecting, which flags a refusal as low-coverage rather than claiming a
+  refusal that did not happen — but a model declining in an unusual phrasing will be
+  missed.
 - Cosine similarity is a full scan: fine to ~10⁵ chunks, then it needs an index.
 - Timestamps for the final turn of a transcript are estimated from speaking rate,
   since nothing follows it to bound the end.

@@ -1,5 +1,5 @@
 import { config } from "@/lib/config";
-import { extractCitations } from "@/lib/sources";
+import { CITATION_PATTERN, extractCitations, parseCitationToken } from "@/lib/sources";
 import type { GuardrailFlag, GuardrailVerdict, Source } from "@/lib/types";
 
 /**
@@ -91,6 +91,40 @@ function isAssertive(sentence: string): boolean {
   return !NON_ASSERTIVE.some((pattern) => pattern.test(sentence.trim()));
 }
 
+/**
+ * The model declining because the evidence does not cover the question.
+ *
+ * This matters because the model turns out to be the *better* judge of
+ * answerability than the retrieval gate. Calibrating the gate against real
+ * embeddings (`npm run gate`) showed neither of its signals separates answerable
+ * from unanswerable questions: a question shaped like the corpus scores 0.40
+ * cosine on a topic the corpus never mentions, higher than genuinely answerable
+ * questions. The model reads the excerpts and gets it right anyway — so the
+ * remaining job is to notice when it has declined, rather than filing a correct
+ * refusal as an answer that forgot to cite its sources.
+ */
+const DECLINE_PATTERNS = [
+  /\b(do|does|did) not (contain|include|mention|provide|cover|say|specify|discuss)\b/i,
+  /\b(no|not any) (information|mention|record|reference|discussion|detail)s? (about|on|regarding|of)\b/i,
+  /\bis not (mentioned|discussed|covered|addressed|stated|specified)\b/i,
+  /\b(cannot|can't|could not|couldn't) (find|answer|determine|tell)\b/i,
+  /\bnothing (in|about) the (excerpts|sources|transcripts?|meetings?)\b/i,
+  /\bI (could not|couldn't|did not|didn't) find\b/i,
+];
+
+export function looksLikeDecline(answer: string): boolean {
+  /**
+   * Only the first sentence counts. A real decline leads with it — the prompt
+   * requires answering the question first — whereas "the excerpts do not say who
+   * signed it off" in a later sentence is a caveat on a substantive answer. Reading
+   * further conflated the two. Under-detecting is the safe direction: a missed
+   * decline is reported as low citation coverage, while a false one would claim the
+   * system refused when it actually answered.
+   */
+  const opening = splitIntoSentences(answer)[0] ?? "";
+  return DECLINE_PATTERNS.some((pattern) => pattern.test(opening));
+}
+
 export function evaluateAnswer(answer: string, sources: Source[]): GuardrailVerdict {
   const validLabels = new Set(sources.map((source) => source.label));
   const cited = extractCitations(answer);
@@ -99,25 +133,44 @@ export function evaluateAnswer(answer: string, sources: Source[]): GuardrailVerd
   const sentences = splitIntoSentences(answer).filter(isAssertive);
   const withCitation = sentences.filter((sentence) => extractCitations(sentence).some((label) => validLabels.has(label)));
   const citationCoverage = sentences.length === 0 ? 1 : withCitation.length / sentences.length;
+  const declined = looksLikeDecline(answer);
 
   const flags: GuardrailFlag[] = [];
   if (sources.length === 0) flags.push("no-evidence");
+  if (declined) flags.push("declined");
   if (invalidCitations.length > 0) flags.push("invalid-citations");
-  if (sources.length > 0 && citationCoverage < config.guardrails.minCitationCoverage) flags.push("low-citation-coverage");
+  // A decline has nothing to cite, so low coverage is the correct shape for it and
+  // warning the user to "verify this" would be noise.
+  if (sources.length > 0 && !declined && citationCoverage < config.guardrails.minCitationCoverage) {
+    flags.push("low-citation-coverage");
+  }
 
-  return { citationCoverage: Number(citationCoverage.toFixed(2)), invalidCitations, flags };
+  return { citationCoverage: Number(citationCoverage.toFixed(2)), invalidCitations, flags, declined };
 }
 
-/** Removes citation markers that point at nothing, leaving the sentence readable. */
+/**
+ * Removes citation markers that point at nothing, leaving the sentence readable.
+ * Timecodes inside a marker are kept: they are the reader's way back to the moment,
+ * and dropping them would lose information the model got right.
+ */
 export function stripInvalidCitations(answer: string, sources: Source[]): string {
   const validLabels = new Set(sources.map((source) => source.label));
   return answer
-    .replace(/\[(S\d+(?:\s*,\s*S\d+)*)\]/g, (match, group: string) => {
-      const kept = group
-        .split(/\s*,\s*/)
-        .map((label) => label.trim())
-        .filter((label) => validLabels.has(label));
-      return kept.length > 0 ? `[${kept.join(", ")}]` : "";
+    .replace(CITATION_PATTERN, (token) => {
+      // Walk in order so a span attached to a dropped label goes with it, rather
+      // than being re-attached to whichever source happens to survive.
+      const kept: string[] = [];
+      let lastLabelValid = false;
+      for (const item of parseCitationToken(token).items) {
+        if (item.kind === "label") {
+          lastLabelValid = validLabels.has(item.value);
+          if (lastLabelValid) kept.push(item.value);
+        } else if (lastLabelValid || kept.length === 0) {
+          kept.push(item.value);
+        }
+      }
+      const hasLabel = kept.some((part) => /^S\d+$/.test(part));
+      return hasLabel ? `[${kept.join(", ")}]` : "";
     })
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([.,;:])/g, "$1");

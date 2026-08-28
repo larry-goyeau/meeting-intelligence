@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { CITATION_PATTERN, parseCitationToken } from "@/lib/sources";
 import { cx } from "./ui";
 
 /**
@@ -21,7 +22,10 @@ interface Props {
   highlighted?: string | null;
 }
 
-const INLINE = /(\[S\d+(?:\s*,\s*S\d+)*\])|(\*\*[^*]+\*\*)|(`[^`]+`)/g;
+// Built from the shared citation pattern so the renderer and the grader agree on
+// what a citation is; drifting apart once already cost every timestamped citation
+// its clickable pill.
+const INLINE = new RegExp(`(${CITATION_PATTERN.source})|(\\*\\*[^*]+\\*\\*)|(\`[^\`]+\`)`, "g");
 
 function renderInline(text: string, props: Props, keyPrefix: string): ReactNode[] {
   const nodes: ReactNode[] = [];
@@ -33,29 +37,34 @@ function renderInline(text: string, props: Props, keyPrefix: string): ReactNode[
     if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
     const [token] = match;
 
-    if (token.startsWith("[S")) {
-      const labels = token.slice(1, -1).split(/\s*,\s*/);
+    if (token.startsWith("[")) {
+      // Rendered in written order, so a span stays next to the label it belongs to.
+      const { items } = parseCitationToken(token);
       nodes.push(
-        <span key={`${keyPrefix}-cite-${match.index}`} className="inline-flex gap-0.5 align-baseline">
-          {labels.map((label) =>
-            props.validLabels.has(label) ? (
+        <span key={`${keyPrefix}-cite-${match.index}`} className="inline-flex items-baseline gap-0.5 align-baseline">
+          {items.map((item, itemIndex) =>
+            item.kind === "timecode" ? (
+              <span key={itemIndex} className="mr-0.5 font-mono text-[10px] text-ink-faint">
+                {item.value}
+              </span>
+            ) : props.validLabels.has(item.value) ? (
               <button
-                key={label}
+                key={itemIndex}
                 type="button"
-                onClick={() => props.onCite(label)}
-                title={`Show source ${label}`}
+                onClick={() => props.onCite(item.value)}
+                title={`Show source ${item.value}`}
                 className={cx(
                   "mx-px inline-flex h-[18px] items-center rounded border px-1 font-mono text-[10px] font-semibold transition-colors",
-                  props.highlighted === label
+                  props.highlighted === item.value
                     ? "border-accent bg-accent text-canvas"
                     : "border-accent/40 bg-accent-soft text-accent hover:border-accent hover:bg-accent/20",
                 )}
               >
-                {label}
+                {item.value}
               </button>
             ) : (
-              <span key={label} className="text-ink-faint">
-                [{label}]
+              <span key={itemIndex} className="text-ink-faint">
+                [{item.value}]
               </span>
             ),
           )}

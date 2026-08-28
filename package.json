@@ -11,8 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed": "node --disable-warning=ExperimentalWarning scripts/run.mjs scripts/seed.ts",
-    "eval": "node --disable-warning=ExperimentalWarning scripts/run.mjs scripts/eval.ts",
+    "seed": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning scripts/run.mjs scripts/seed.ts",
+    "eval": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning scripts/run.mjs scripts/eval.ts",
+    "gate": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning scripts/run.mjs scripts/gate.ts",
     "reset": "rm -rf .data"
   },
   "dependencies": {

@@ -46,6 +46,9 @@ interface Outcome {
   question: string;
   recall: number;
   missing: string[];
+  /** The retrieval gate declined before any model call. */
+  gateRefused: boolean;
+  /** What the system concluded overall: the gate, or the model declining on the evidence. */
   refused: boolean;
   refusalCorrect: boolean;
   sources: number;
@@ -101,15 +104,18 @@ async function main() {
     const haystack = normalise(retrieval.sources.map((source) => source.text).join("\n"));
     const missing = testCase.mustRetrieve.filter((needle) => !haystack.includes(normalise(needle)));
     const recall = testCase.mustRetrieve.length === 0 ? 1 : (testCase.mustRetrieve.length - missing.length) / testCase.mustRetrieve.length;
-    const refused = retrieval.sources.length === 0;
+    const gateRefused = retrieval.sources.length === 0;
 
     const outcome: Outcome = {
       id: testCase.id,
       question: testCase.question,
       recall,
       missing,
-      refused,
-      refusalCorrect: Boolean(testCase.expectRefusal) === refused,
+      gateRefused,
+      // Without generated answers the gate is all we can observe. With them, the
+      // model's own decline counts too — and is the more reliable signal of the two.
+      refused: gateRefused,
+      refusalCorrect: Boolean(testCase.expectRefusal) === gateRefused,
       sources: retrieval.sources.length,
       retrievalMs,
     };
@@ -120,14 +126,16 @@ async function main() {
       let labels = new Set<string>();
       let coverage: number | undefined;
       let invalid = 0;
+      let declined = false;
       let costUsd = 0;
       for await (const event of ask({ question: testCase.question, history: [], meetingIds: [] }, repository)) {
         if (event.type === "meta") labels = new Set((event.data as { sources: { label: string }[] }).sources.map((s) => s.label));
         if (event.type === "delta") answer += event.data as string;
         if (event.type === "done") {
-          const done = event.data as { verdict: { citationCoverage: number; invalidCitations: string[] }; usage: { estimatedCostUsd: number }; answer?: string };
+          const done = event.data as { verdict: { citationCoverage: number; invalidCitations: string[]; declined: boolean }; usage: { estimatedCostUsd: number }; answer?: string };
           coverage = done.verdict.citationCoverage;
           invalid = done.verdict.invalidCitations.length;
+          declined = done.verdict.declined;
           costUsd = done.usage.estimatedCostUsd;
           if (done.answer) answer = done.answer;
         }
@@ -140,6 +148,10 @@ async function main() {
       outcome.invalidCitations = invalid + extractCitations(answer).filter((label) => !labels.has(label)).length;
       outcome.totalMs = Date.now() - answerStarted;
       outcome.costUsd = costUsd;
+      // The user-visible outcome: either the gate declined, or the model read the
+      // evidence and declined. Both are the system saying "I don't know".
+      outcome.refused = gateRefused || declined;
+      outcome.refusalCorrect = Boolean(testCase.expectRefusal) === outcome.refused;
     }
 
     outcomes.push(outcome);
@@ -207,7 +219,12 @@ function summarise(outcomes: Outcome[], withAnswers: boolean, isRemote: boolean)
   console.log(`mean retrieval recall ${(average(outcomes.map((o) => o.recall)) * 100).toFixed(1)}%`);
   console.log(`full recall           ${perfect}/${outcomes.length}`);
   console.log(
-    `refusal correctness   ${outcomes.filter((o) => o.refusalCorrect).length}/${outcomes.length}${isRemote ? "" : "  (reported only: offline embeddings cannot judge relevance)"}`,
+    `refusal correctness   ${outcomes.filter((o) => o.refusalCorrect).length}/${outcomes.length}${
+      withAnswers ? "  (gate or model decline)" : "  (retrieval gate only — run with --answers for the real figure)"
+    }${isRemote ? "" : "  [offline embeddings cannot judge relevance]"}`,
+  );
+  console.log(
+    `  of which by gate    ${outcomes.filter((o) => o.gateRefused).length}   by model decline  ${outcomes.filter((o) => o.refused && !o.gateRefused).length}`,
   );
   console.log(`median retrieval      ${median(outcomes.map((o) => o.retrievalMs))} ms`);
   if (withAnswers) {

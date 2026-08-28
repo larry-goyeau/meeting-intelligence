@@ -56,9 +56,54 @@ export function parseSourceBlock(prompt: string): ParsedSource[] {
   return parsed;
 }
 
+/**
+ * The canonical citation marker, shared by the grader, the sanitiser and the
+ * renderer so they cannot disagree about what counts as a citation.
+ *
+ * A bracket may carry a timecode alongside the labels, because the model is asked
+ * both to cite `[S2]` and to give timestamps, and it reasonably combines them into
+ * `[S6, 00:05:12]`. Matching labels only meant those citations were invisible: not
+ * counted towards coverage, and — worse — rendered as plain text instead of a
+ * clickable pill, so the one feature this product exists for silently stopped
+ * working on most real answers. The prompt asks for the clean form; this tolerates
+ * the drift, because a prompt is a request and a parser is a guarantee.
+ */
+const TIMECODE = String.raw`\d{1,3}:[0-5]\d(?::[0-5]\d)?`;
+/** A moment or a span: models cite `00:04:27` and `00:01:40–02:42` about equally often. */
+const TIME_ITEM = String.raw`(?:at\s+)?${TIMECODE}(?:\s*[\u2013\u2014-]\s*${TIMECODE})?`;
+const CITATION_ITEM = String.raw`(?:S\d+|${TIME_ITEM})`;
+export const CITATION_PATTERN = new RegExp(String.raw`\[\s*${CITATION_ITEM}(?:\s*[,;]\s*${CITATION_ITEM})*\s*\]`, "g");
+
+export interface CitationItem {
+  kind: "label" | "timecode";
+  value: string;
+}
+
+/**
+ * Splits a marker into its parts, in the order written.
+ *
+ * Order is kept because a marker often pairs each label with its own span —
+ * `[S3, 00:06:47–08:10; S7, 01:20–02:52]` — and collecting all labels then all
+ * timecodes loses which span belongs to which source, which then renders as a row
+ * of pills followed by a row of unattached numbers.
+ */
+export function parseCitationToken(token: string): { items: CitationItem[]; labels: string[]; timecodes: string[] } {
+  const items = token
+    .slice(1, -1)
+    .split(/\s*[,;]\s*/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .map<CitationItem>((part) => ({ kind: /^S\d+$/.test(part) ? "label" : "timecode", value: part }));
+
+  return {
+    items,
+    labels: items.filter((item) => item.kind === "label").map((item) => item.value),
+    timecodes: items.filter((item) => item.kind === "timecode").map((item) => item.value),
+  };
+}
+
 /** Citation markers the model emitted, in order of appearance, deduplicated. */
 export function extractCitations(answer: string): string[] {
-  const found = answer.match(/\[S\d+(?:\s*,\s*S\d+)*\]/g) ?? [];
-  const labels = found.flatMap((group) => group.slice(1, -1).split(/\s*,\s*/));
-  return [...new Set(labels.map((label) => label.trim()))];
+  const found = answer.match(CITATION_PATTERN) ?? [];
+  return [...new Set(found.flatMap((token) => parseCitationToken(token).labels))];
 }

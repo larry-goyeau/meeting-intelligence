@@ -112,8 +112,26 @@ export async function retrieve(
     repository.documentFrequencies(terms),
     Math.max(1, repository.countChunks()),
   );
+  /**
+   * The gate is deliberately cheap insurance, not the arbiter of answerability.
+   *
+   * Calibration against real embeddings (`npm run gate`) showed neither signal
+   * separates the two populations: a question shaped like the corpus scores 0.40
+   * cosine on a subject the corpus never mentions, above several genuinely
+   * answerable questions, and lexical coverage reaches 0.69 for "who won the
+   * football match last night" because those words all occur somewhere. So the gate
+   * only catches what is unambiguous, and the model — which reads the excerpts and
+   * judges them correctly — decides the rest, with `looksLikeDecline` recognising
+   * when it has declined.
+   *
+   * `dense.length === 0` is that unambiguous case: not one chunk in the corpus
+   * cleared the absolute similarity floor, so there is no semantic evidence at all
+   * and any lexical hits are incidental word overlap. On the calibration set every
+   * answerable question scored at least 0.22, so nothing real is lost here.
+   */
   const gated =
     selected.length === 0 ||
+    dense.length === 0 ||
     (maxDenseScore < config.retrieval.strongDenseSimilarity && coverage < config.retrieval.minQueryCoverage);
 
   const relevance = {

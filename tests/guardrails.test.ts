@@ -47,6 +47,35 @@ describe("extractCitations", () => {
   it("finds none in uncited text", () => {
     expect(extractCitations("No citations at all.")).toEqual([]);
   });
+
+  /**
+   * The real model combines the label and the timecode into one bracket, because it
+   * is asked for both. Offline mode never did, so this went unnoticed until a run
+   * with a real provider showed citation coverage collapsing while invalid
+   * citations stayed at zero — the tell that markers were being missed, not
+   * rejected.
+   */
+  it("reads a marker that carries a timecode alongside the label", () => {
+    expect(extractCitations("Sofia reversed it [S6, 00:05:12].")).toEqual(["S6"]);
+    expect(extractCitations("Both agreed [S1, S3, at 00:06:02].")).toEqual(["S1", "S3"]);
+    expect(extractCitations("Discussed [S2, 12:40].")).toEqual(["S2"]);
+  });
+
+  /**
+   * The shape the real model actually favours: a time *span* per label, groups
+   * separated by semicolons. Accepting only single timecodes made these invisible
+   * and put mean citation coverage at 15% while every answer was in fact cited.
+   */
+  it("reads spans and semicolon-separated groups", () => {
+    expect(extractCitations("They chose Postgres [S6, 00:01:40\u201302:42; S8, 00:04:27\u201305:35].")).toEqual(["S6", "S8"]);
+    expect(extractCitations("Reversed [S4, 00:06:47\u201308:10; S10, 00:03:42\u201304:05; S11].")).toEqual(["S4", "S10", "S11"]);
+    expect(extractCitations("With a hyphen [S2, 00:01:00-00:02:00].")).toEqual(["S2"]);
+  });
+
+  it("does not mistake ordinary bracketed prose for a citation", () => {
+    expect(extractCitations("The transcript line [00:02:27] Daniel Okoye: ... is context.")).toEqual([]);
+    expect(extractCitations("A note [see the appendix] is not a citation.")).toEqual([]);
+  });
 });
 
 describe("checkQuestion", () => {
@@ -89,8 +118,28 @@ describe("evaluateAnswer", () => {
 
   it("does not penalise a refusal for having no citations", () => {
     const verdict = evaluateAnswer(noEvidenceAnswer("what about pricing?", false), []);
-    expect(verdict.flags).toEqual(["no-evidence"]);
+    expect(verdict.flags).toContain("no-evidence");
+    expect(verdict.flags).not.toContain("low-citation-coverage");
     expect(verdict.citationCoverage).toBe(1);
+  });
+
+  /**
+   * The model declining on the evidence is the system's most reliable refusal, so
+   * it has to be recognised rather than filed as an answer that forgot to cite.
+   */
+  it("recognises the model declining on the evidence it was given", () => {
+    const decline = "The provided transcript excerpts do not contain any information about the parental leave policy. The discussions focus on Project Orion.";
+    const verdict = evaluateAnswer(decline, sources);
+    expect(verdict.declined).toBe(true);
+    expect(verdict.flags).toContain("declined");
+    expect(verdict.flags).not.toContain("low-citation-coverage");
+  });
+
+  it("does not read a mid-answer caveat as a refusal", () => {
+    const answer = "The team chose Postgres for the analytics store [S1]. The excerpts do not say who signed it off.";
+    const verdict = evaluateAnswer(answer, sources);
+    expect(verdict.declined).toBe(false);
+    expect(verdict.flags).not.toContain("declined");
   });
 
   it("ignores framing sentences when measuring coverage", () => {
@@ -111,6 +160,24 @@ describe("stripInvalidCitations", () => {
   it("leaves a valid answer untouched", () => {
     const answer = "They chose Postgres [S1] and deferred multi-region [S2].";
     expect(stripInvalidCitations(answer, sources)).toBe(answer);
+  });
+
+  it("keeps the timecode when pruning labels, since it is the way back to the moment", () => {
+    expect(stripInvalidCitations("They chose Postgres [S1, 00:04:10].", sources)).toBe(
+      "They chose Postgres [S1, 00:04:10].",
+    );
+  });
+
+  it("drops a span along with the invented label it was attached to", () => {
+    expect(stripInvalidCitations("They chose Postgres [S1, 00:04:10; S9, 00:09:30].", sources)).toBe(
+      "They chose Postgres [S1, 00:04:10].",
+    );
+  });
+
+  it("counts a timestamped citation towards coverage", () => {
+    const verdict = evaluateAnswer("The team reversed the storage decision later on [S1, 00:06:02].", sources);
+    expect(verdict.citationCoverage).toBe(1);
+    expect(verdict.flags).not.toContain("low-citation-coverage");
   });
 });
 
