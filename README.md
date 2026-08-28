@@ -102,7 +102,7 @@ The code is separated by responsibility:
 
 ```text
 src/lib/transcript/   transcript parsing and splitting
-src/lib/providers/    OpenAI provider and deterministic test provider
+src/lib/providers/    OpenAI connection and local test engine
 src/lib/store/        SQLite storage and search
 src/lib/rag/          retrieval, answers, briefs, and guardrails
 src/app/api/          application API
@@ -216,8 +216,9 @@ Estimated cost         $0.031 for 16 questions
 Citation coverage varies between runs because generated wording changes. It has ranged
 from 60% to 78%. Retrieval recall and citation validity remained stable.
 
-Tests always use the deterministic test provider. They are free and cannot spend API
-credits by mistake. The project currently has 103 unit and integration tests.
+Tests always use a small local engine instead of OpenAI. It gives the same result for
+the same input, costs nothing, and cannot spend API credits by mistake. The project
+currently has 103 unit and integration tests.
 
 ### Observability
 
@@ -238,9 +239,9 @@ Meeting briefs are created during ingestion. This makes common questions faster 
 more consistent. The trade-off is that a change to the brief format requires meetings
 to be processed again.
 
-Automated tests use a deterministic provider. This keeps them independent from
-external services and prevents accidental API spending. It is a testing tool, not a
-replacement for the OpenAI-powered product experience.
+Automated tests do not call OpenAI. They use local code that always gives repeatable
+results. This keeps tests independent from external services and prevents accidental
+API spending. It is only a testing tool, not a replacement for the real application.
 
 Answer quality is measured instead of assumed. Retrieval recall has a minimum required
 score, and changes to parsing, citations, or refusal behaviour are covered by
@@ -248,8 +249,8 @@ regression tests.
 
 ## Engineering standards
 
-The code uses strict TypeScript. Responsibilities are separated into parsing,
-storage, retrieval, providers, API routes, and interface components.
+The code uses strict TypeScript. Responsibilities are separated into transcript
+parsing, storage, search, AI connections, API routes, and interface components.
 
 Tests cover transcript parsing, text splitting, search, context limits, guardrails,
 citations, ingestion, streaming, and traces. Lint and type checks pass. Secrets are
@@ -295,8 +296,8 @@ splitting strategy changes, instead of rebuilding the full index.
 
 ## Known limitations
 
-The deterministic test provider does not match online answer quality. Difficult
-refusals require a model call and therefore add latency and cost.
+The local test engine does not produce answers as well as OpenAI. Difficult refusals
+require a model call and therefore add latency and cost.
 
 Vector search scans every stored vector. This is fine for a small corpus but will need
 an index at larger scale.
