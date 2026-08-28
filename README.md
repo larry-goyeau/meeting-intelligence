@@ -74,6 +74,9 @@ re-reading of the transcript.
 **Ask** questions in a conversation, optionally scoped to a subset of meetings.
 Every assertion carries a `[S1]`-style citation; clicking one opens the transcript
 scrolled to that turn and highlights it, so any claim can be checked in two clicks.
+**New conversation** resets the thread, which matters because the history feeds query
+rewriting: a bare "who owns it?" resolves against whatever came before, so a stale
+thread silently answers about the wrong subject rather than failing visibly.
 
 ![Clicking a citation opens the transcript at the cited turn](docs/screenshots/05-transcript-viewer.png)
 

@@ -100,6 +100,23 @@ export function Workspace({ initialStatus, initialMeetings }: Props) {
   const latestAssistant = useMemo(() => [...messages].reverse().find((message) => message.role === "assistant") ?? null, [messages]);
   const sources = latestAssistant?.meta?.sources ?? [];
 
+  /**
+   * Starts a new conversation. This is not only cosmetic: `history` is derived from
+   * `messages` and feeds query rewriting, so a stale thread actively distorts
+   * follow-ups — asking "who owns it?" after an unrelated topic resolves "it" against
+   * the wrong subject. Clearing is the fix for that, not just for a long scrollback.
+   *
+   * The in-flight request is aborted first. Dropping the messages without it leaves
+   * `streaming` true until the fetch finishes, so the composer stays locked behind a
+   * Stop button with nothing visible to stop.
+   */
+  const clearConversation = useCallback(() => {
+    abortRef.current?.abort();
+    setMessages([]);
+    setHighlighted(null);
+    setTab("sources");
+  }, []);
+
   const seed = async () => {
     setSeeding(true);
     try {
@@ -265,6 +282,7 @@ export function Workspace({ initialStatus, initialMeetings }: Props) {
             highlighted={highlighted}
             onSend={(question) => void send(question)}
             onStop={() => abortRef.current?.abort()}
+            onClear={clearConversation}
             onCite={(label) => {
               setTab("sources");
               setHighlighted(label);

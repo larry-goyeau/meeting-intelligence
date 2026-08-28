@@ -27,6 +27,7 @@ interface Props {
   highlighted: string | null;
   onSend: (question: string) => void;
   onStop: () => void;
+  onClear: () => void;
   onCite: (label: string) => void;
   onSeed: () => void;
   seeding: boolean;
@@ -114,9 +115,20 @@ export function ChatPanel(props: Props) {
               </Button>
             )}
           </div>
-          <p className="mt-2 px-1 text-[11px] text-ink-faint">
-            {props.scopeLabel} · Enter to send, Shift+Enter for a new line
-          </p>
+          <div className="mt-2 flex items-center justify-between gap-3 px-1">
+            <p className="text-[11px] text-ink-faint">{props.scopeLabel} · Enter to send, Shift+Enter for a new line</p>
+            {props.messages.length > 0 ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={props.onClear}
+                title="Start a new conversation. Follow-up questions stop resolving against these turns."
+                className="shrink-0 text-[11px]"
+              >
+                New conversation
+              </Button>
+            ) : null}
+          </div>
         </div>
       </div>
     </div>
