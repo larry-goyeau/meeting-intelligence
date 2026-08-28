@@ -17,22 +17,16 @@ Node 22.18 or newer is required.
 
 ```bash
 npm install
+cp .env.example .env
+# Add a valid OPENAI_API_KEY to .env
 npm run seed
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-The app works without an API key. In that case, it uses a simple offline mode. Search,
-citations, and traces still work, but answers are copied from relevant excerpts rather
-than rewritten by an AI model.
-
-For full answer quality:
-
-```bash
-cp .env.example .env
-# Add OPENAI_API_KEY to .env
-```
+A valid OpenAI API key is required for the intended experience. It is used to create
+embeddings, extract meeting briefs, and generate answers.
 
 Docker is also supported:
 
@@ -108,7 +102,7 @@ The code is separated by responsibility:
 
 ```text
 src/lib/transcript/   transcript parsing and splitting
-src/lib/providers/    online and offline AI providers
+src/lib/providers/    OpenAI provider and deterministic test provider
 src/lib/store/        SQLite storage and search
 src/lib/rag/          retrieval, answers, briefs, and guardrails
 src/app/api/          application API
@@ -222,8 +216,8 @@ Estimated cost         $0.031 for 16 questions
 Citation coverage varies between runs because generated wording changes. It has ranged
 from 60% to 78%. Retrieval recall and citation validity remained stable.
 
-Tests always use the offline provider. They are deterministic, free, and cannot spend
-API credits by mistake. The project currently has 103 unit and integration tests.
+Tests always use the deterministic test provider. They are free and cannot spend API
+credits by mistake. The project currently has 103 unit and integration tests.
 
 ### Observability
 
@@ -244,9 +238,9 @@ Meeting briefs are created during ingestion. This makes common questions faster 
 more consistent. The trade-off is that a change to the brief format requires meetings
 to be processed again.
 
-The offline provider is a real application mode rather than a test mock. This keeps
-development and automated tests independent from external services. Its answers are
-less natural, and it is not reliable enough to judge difficult refusals.
+Automated tests use a deterministic provider. This keeps them independent from
+external services and prevents accidental API spending. It is a testing tool, not a
+replacement for the OpenAI-powered product experience.
 
 Answer quality is measured instead of assumed. Retrieval recall has a minimum required
 score, and changes to parsing, citations, or refusal behaviour are covered by
@@ -261,14 +255,6 @@ Tests cover transcript parsing, text splitting, search, context limits, guardrai
 citations, ingestion, streaming, and traces. Lint and type checks pass. Secrets are
 excluded from Git. The Docker image uses several build stages and runs as a non-root
 user.
-
-Some standards were intentionally left out for this assignment. There is no
-authentication, multi-tenant isolation, database migration system, or CI
-configuration. Browser automation captures screenshots but is not yet a complete
-end-to-end test suite. Accessibility has not received a full audit.
-
-These choices are acceptable for a local demonstration. They would need to change
-before handling real company meetings.
 
 ## Production and scaling
 
@@ -309,8 +295,8 @@ splitting strategy changes, instead of rebuilding the full index.
 
 ## Known limitations
 
-Offline mode is useful for development but does not match online answer quality.
-Difficult refusals require a model call and therefore add latency and cost.
+The deterministic test provider does not match online answer quality. Difficult
+refusals require a model call and therefore add latency and cost.
 
 Vector search scans every stored vector. This is fine for a small corpus but will need
 an index at larger scale.
