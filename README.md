@@ -320,15 +320,25 @@ mean retrieval recall  100.0%
 full recall            12/12
 refusal correctness    12/12   (gate or model decline)
   of which by gate     0    by model decline  1
-median retrieval       333 ms
-mean citation coverage 75.7%
+median retrieval       314 ms
+mean citation coverage 74.3%  (over 11 answers; 1 declined, nothing to cite)
 invalid citations      0
 keyword presence       91.7%  (weak proxy, not accuracy)
-median end-to-end      2781 ms
-total estimated cost   $0.0232   (twelve questions, answers included)
+median end-to-end      2378 ms
+total estimated cost   $0.0228   (twelve questions, answers included)
 ```
 
 The harness exits non-zero below a 0.8 recall floor, so it can gate a pipeline.
+
+Answers are sampled at temperature 0.2, so one run is not a measurement. Across five
+runs, citation coverage ranged **60% to 76%** — it depends on how many sentences the
+model chooses to cite, which is the most style-sensitive thing measured here. Recall
+(12/12), refusal correctness (12/12), invalid citations (0) and keyword presence
+(91.7%) were identical in every run. Quote the range, not the best number.
+
+Declines are excluded from the coverage average rather than scored zero: a refusal
+has nothing to cite, and counting it as uncited would fold "refused correctly" into a
+metric about how well answers are grounded.
 
 Offline mode reaches the same 100% retrieval recall — that metric is
 model-independent by design — but refusal correctness there is *reported and not
@@ -350,8 +360,8 @@ since markers were being *missed*, not rejected. The real damage was in the UI, 
 used its own copy of the same narrow pattern: every timestamped citation rendered as
 plain grey text instead of a clickable pill, so the one feature this product exists
 for silently stopped working on most real answers. Fixing the pattern and sharing it
-between the grader and the renderer moved coverage to **75.7%** without touching a
-single answer. The remaining gap is real and now honestly measured.
+between the grader and the renderer moved coverage into the **60–76%** band without
+touching a single answer. The remaining gap is real and now honestly measured.
 
 **The test suite was quietly running against the live API.** With `OPENAI_API_KEY`
 exported in the shell, `npm test` used the real provider: 26 s instead of 2 s, it

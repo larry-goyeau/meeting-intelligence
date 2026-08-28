@@ -57,6 +57,8 @@ interface Outcome {
   mentioned?: string[];
   missingMentions?: string[];
   citationCoverage?: number;
+  /** The model declined on the evidence. Excluded from the coverage average. */
+  declined?: boolean;
   invalidCitations?: number;
   totalMs?: number;
   costUsd?: number;
@@ -145,6 +147,7 @@ async function main() {
       outcome.mentioned = testCase.shouldMention.filter((needle) => lowerAnswer.includes(normalise(needle)));
       outcome.missingMentions = testCase.shouldMention.filter((needle) => !lowerAnswer.includes(normalise(needle)));
       outcome.citationCoverage = coverage;
+      outcome.declined = declined;
       outcome.invalidCitations = invalid + extractCitations(answer).filter((label) => !labels.has(label)).length;
       outcome.totalMs = Date.now() - answerStarted;
       outcome.costUsd = costUsd;
@@ -228,8 +231,14 @@ function summarise(outcomes: Outcome[], withAnswers: boolean, isRemote: boolean)
   );
   console.log(`median retrieval      ${median(outcomes.map((o) => o.retrievalMs))} ms`);
   if (withAnswers) {
-    const covered = outcomes.map((o) => o.citationCoverage ?? 0);
-    console.log(`mean citation coverage ${(average(covered) * 100).toFixed(1)}%`);
+    // A decline has nothing to cite, so scoring it 0 would mix "refused correctly"
+    // into a metric that is meant to measure how well answers are grounded.
+    const graded = outcomes.filter((o) => o.citationCoverage !== undefined && !o.declined);
+    console.log(
+      `mean citation coverage ${(average(graded.map((o) => o.citationCoverage ?? 0)) * 100).toFixed(1)}%  (over ${graded.length} answers; ${
+        outcomes.length - graded.length
+      } declined, nothing to cite)`,
+    );
     console.log(`invalid citations     ${outcomes.reduce((sum, o) => sum + (o.invalidCitations ?? 0), 0)}`);
     console.log(`keyword presence      ${(average(outcomes.map((o) => proportion(o))) * 100).toFixed(1)}%  (weak proxy, not accuracy)`);
     console.log(`median end-to-end     ${median(outcomes.map((o) => o.totalMs ?? 0))} ms`);
