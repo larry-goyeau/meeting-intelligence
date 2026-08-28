@@ -64,6 +64,25 @@ export function ChatPanel(props: Props) {
         className="flex-1 overflow-y-auto px-6 py-6"
       >
         <div className="mx-auto max-w-3xl space-y-6">
+          {/*
+            Sticky, so it stays reachable in a long thread. At the top rather than beside
+            the composer: it is where the action is looked for, and it does not sit next
+            to Ask where a misclick would cost the conversation.
+          */}
+          {props.messages.length > 0 ? (
+            <div className="sticky top-0 z-10 -mt-2 flex justify-end bg-canvas/90 pb-2 pt-2 backdrop-blur-sm">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={props.onClear}
+                title="Start a new conversation. Follow-up questions stop resolving against these turns."
+              >
+                <NewIcon />
+                New conversation
+              </Button>
+            </div>
+          ) : null}
+
           {props.messages.length === 0 ? (
             <EmptyState corpusEmpty={props.corpusEmpty} onSeed={props.onSeed} seeding={props.seeding} onPick={props.onSend} />
           ) : null}
@@ -115,23 +134,20 @@ export function ChatPanel(props: Props) {
               </Button>
             )}
           </div>
-          <div className="mt-2 flex items-center justify-between gap-3 px-1">
-            <p className="text-[11px] text-ink-faint">{props.scopeLabel} · Enter to send, Shift+Enter for a new line</p>
-            {props.messages.length > 0 ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={props.onClear}
-                title="Start a new conversation. Follow-up questions stop resolving against these turns."
-                className="shrink-0 text-[11px]"
-              >
-                New conversation
-              </Button>
-            ) : null}
-          </div>
+          <p className="mt-2 px-1 text-[11px] text-ink-faint">
+            {props.scopeLabel} · Enter to send, Shift+Enter for a new line
+          </p>
         </div>
       </div>
     </div>
+  );
+}
+
+function NewIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden className="size-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+      <path d="M8 3.5v9M3.5 8h9" />
+    </svg>
   );
 }
 

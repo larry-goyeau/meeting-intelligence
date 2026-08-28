@@ -72,6 +72,16 @@ describe("extractCitations", () => {
     expect(extractCitations("With a hyphen [S2, 00:01:00-00:02:00].")).toEqual(["S2"]);
   });
 
+  /**
+   * A trailing block covering several sources, with no comma between each label and
+   * its span. This is what the model writes when one paragraph rests on four
+   * excerpts, and requiring the comma scored a fully cited answer at 0%.
+   */
+  it("reads a label and its span with no comma between them", () => {
+    expect(extractCitations("Reversed [S10 00:03:42\u201300:06:26, S11 00:03:58\u201300:05:55].")).toEqual(["S10", "S11"]);
+    expect(extractCitations("Provisioned [S12 00:05:16, S13 00:06:26\u201307:45].")).toEqual(["S12", "S13"]);
+  });
+
   it("does not mistake ordinary bracketed prose for a citation", () => {
     expect(extractCitations("The transcript line [00:02:27] Daniel Okoye: ... is context.")).toEqual([]);
     expect(extractCitations("A note [see the appendix] is not a citation.")).toEqual([]);

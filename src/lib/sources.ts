@@ -71,7 +71,13 @@ export function parseSourceBlock(prompt: string): ParsedSource[] {
 const TIMECODE = String.raw`\d{1,3}:[0-5]\d(?::[0-5]\d)?`;
 /** A moment or a span: models cite `00:04:27` and `00:01:40–02:42` about equally often. */
 const TIME_ITEM = String.raw`(?:at\s+)?${TIMECODE}(?:\s*[\u2013\u2014-]\s*${TIMECODE})?`;
-const CITATION_ITEM = String.raw`(?:S\d+|${TIME_ITEM})`;
+/**
+ * A label may carry its own timecode with no comma between them — `[S10 00:03:42–06:26]`
+ * — which is how the model writes a trailing citation block covering several sources.
+ * Requiring the comma read the whole block as unparseable and scored a fully cited
+ * answer at 0%.
+ */
+const CITATION_ITEM = String.raw`(?:S\d+(?:\s+${TIME_ITEM})?|${TIME_ITEM})`;
 export const CITATION_PATTERN = new RegExp(String.raw`\[\s*${CITATION_ITEM}(?:\s*[,;]\s*${CITATION_ITEM})*\s*\]`, "g");
 
 export interface CitationItem {
@@ -93,7 +99,15 @@ export function parseCitationToken(token: string): { items: CitationItem[]; labe
     .split(/\s*[,;]\s*/)
     .map((part) => part.trim())
     .filter((part) => part.length > 0)
-    .map<CitationItem>((part) => ({ kind: /^S\d+$/.test(part) ? "label" : "timecode", value: part }));
+    .flatMap<CitationItem>((part) => {
+      // "S10 00:03:42–06:26" is one written item but two things to render.
+      const pair = /^(S\d+)\s+(.+)$/.exec(part);
+      if (pair) return [
+        { kind: "label", value: pair[1]! },
+        { kind: "timecode", value: pair[2]! },
+      ];
+      return [{ kind: /^S\d+$/.test(part) ? "label" : "timecode", value: part }];
+    });
 
   return {
     items,

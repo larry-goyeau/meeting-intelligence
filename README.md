@@ -42,12 +42,14 @@ docker compose up --build     # http://localhost:3000
 Other commands:
 
 ```bash
-npm test          # 101 unit + integration tests, always offline, no network
+npm test          # 103 unit + integration tests, always offline, no network
 npm run eval      # retrieval quality against the hand-written answer key
 npm run eval -- --answers   # also generates answers and grades citations
 npm run gate      # calibrate the refusal thresholds for the active embedding model
 npm run lint && npm run typecheck
 npm run reset     # drop the local index
+
+node scripts/screenshots.mjs   # re-capture the screenshots below (needs the app running)
 ```
 
 ---
@@ -83,9 +85,7 @@ thread silently answers about the wrong subject rather than failing visibly.
 **Decline** when the corpus does not hold the answer, and say so in the interface
 rather than only in the prose. Below, retrieval ran and returned thirteen excerpts —
 the question is close enough in shape to fool a similarity threshold — but the model
-judged them insufficient, and the amber badge reports that as the outcome. Note also
-the answer above it carrying a coverage warning: honest measurement applies to the
-answers too, not just the refusals.
+judged them insufficient, and the amber badge reports that as the outcome.
 
 ![A declined question, badged as having no answer in the sources](docs/screenshots/07-declined.png)
 
@@ -333,12 +333,12 @@ mean retrieval recall  100.0%
 full recall            16/16
 refusal correctness    16/16   (gate or model decline)
   of which by gate     0    by model decline  1
-median retrieval       1091 ms
-mean citation coverage 78.3%  (over 15 answers; 1 declined, nothing to cite)
+median retrieval       337 ms
+mean citation coverage 70.5%  (over 15 answers; 1 declined, nothing to cite)
 invalid citations      0
-keyword presence       90.6%  (weak proxy, not accuracy)
-median end-to-end      3961 ms
-total estimated cost   $0.0309   (sixteen questions, answers included)
+keyword presence       93.8%  (weak proxy, not accuracy)
+median end-to-end      2596 ms
+total estimated cost   $0.0311   (sixteen questions, answers included)
 ```
 
 Retrieval latency is almost entirely the round trip to embed the query; at 39 chunks
@@ -379,6 +379,16 @@ plain grey text instead of a clickable pill, so the one feature this product exi
 for silently stopped working on most real answers. Fixing the pattern and sharing it
 between the grader and the renderer moved coverage into the **60–76%** band without
 touching a single answer. The remaining gap is real and now honestly measured.
+
+Then it recurred, in the same family and found the same way — by looking at a real
+answer. Asked what forced an architecture reversal, the model grouped its citations
+into one trailing block and dropped the comma inside each item: `[S10 00:03:42–06:26,
+S11 00:03:58–05:55]`. Label and timecode with a space between them was a shape the
+pattern still did not admit, so a well-grounded four-source answer scored **0%** and
+rendered no pills at all. The lesson is not "write a better regex" — it is that a
+parser for model output cannot be validated against the shapes I imagine the model
+uses. Each of these was fixed by reading an actual answer, and each fix is now pinned
+by a test carrying the real string that broke it.
 
 **The test suite was quietly running against the live API.** With `OPENAI_API_KEY`
 exported in the shell, `npm test` used the real provider: 26 s instead of 2 s, it
