@@ -1,325 +1,396 @@
 # Meeting Intelligence
 
-A conversational assistant over meeting transcripts. Ask what was decided, who owns
-what, who disagreed, or whether a decision was later reversed — every claim links back
-to the exact turn that supports it. Audio-to-transcript is included as the bonus.
+Meeting Intelligence turns meeting transcripts into a searchable memory.
 
-![The workspace: corpus on the left, cited answer in the middle, evidence on the right](docs/screenshots/02-answer-with-sources.png)
+You can ask what the team decided, who owns an action, or whether an old decision
+changed. The answer does not stand on its own. Each claim links to the exact part of
+the transcript that supports it.
+
+The app covers the Meeting Intelligence option in the assignment. It accepts
+transcripts with speakers and timestamps. It answers questions about discussions,
+decisions, and action items. It can also transcribe audio.
+
+![The workspace: meetings on the left, a cited answer in the middle, and evidence on the right](docs/screenshots/02-answer-with-sources.png)
 
 ## Run it
 
-Requires Node 22.18+ (`node:sqlite`, native TypeScript for the CLI scripts). No
-database to install, no vector service, no API key needed to try it.
+You need Node 22.18 or newer. The Docker image uses Node 24.
 
 ```bash
 npm install
-npm run seed     # indexes the six sample transcripts in data/transcripts/
-npm run dev      # http://localhost:3000
+npm run seed     # index the six sample transcripts
+npm run dev      # open http://localhost:3000
 ```
 
-With no `OPENAI_API_KEY` the app runs **offline**: deterministic hashed embeddings and
-extractive answering, no network, no cost. Everything is exercisable — ingestion,
-hybrid retrieval, citations, traces — but answers are stitched excerpts rather than
-prose. For real quality, `cp .env.example .env` and set `OPENAI_API_KEY`.
+No API key is required for a first look. Without `OPENAI_API_KEY`, the app uses a
+deterministic offline provider. Upload, search, citations, and traces still work.
+Answers are copied from relevant excerpts instead of being rewritten as natural
+prose.
+
+For full answer quality, copy `.env.example` to `.env` and add an OpenAI key.
 
 ```bash
-docker compose up --build     # http://localhost:3000
-
-npm test          # 103 tests, always offline, no network
-npm run eval      # retrieval quality against the hand-written answer key
-npm run eval -- --answers     # also generates answers and grades citations
-npm run gate      # calibrate the refusal signals for the active embedding model
-npm run lint && npm run typecheck
-npm run reset     # drop the local index
+cp .env.example .env
 ```
 
-## What it does
+You can also run the complete app in Docker:
 
-**Ingest** by upload, paste, or audio. Six transcript shapes are parsed:
-`[00:12:34] Speaker: text`, `Speaker: text`, `Speaker (00:12:34): text`, the Google
-Meet export where `Leah Moreau 0:07` sits alone above what she said, WebVTT, SRT. The
-detected format is shown in the UI, because a format that parses *almost* correctly is
-the worst case.
+```bash
+docker compose up --build
+```
 
-![Ingestion: drop files, paste text, or transcribe audio](docs/screenshots/06-upload.png)
+Useful checks:
 
-**At ingestion** each meeting gets a brief extracted once and stored: summary, topics,
-decisions with status (`agreed` / `tentative` / `reversed`), action items with owner and
-due date as spoken, open questions. At write time rather than per question, so "what
-did we decide" is a lookup, not a re-reading of the transcript.
+```bash
+npm test                       # 103 offline tests
+npm run eval                   # evaluate retrieval
+npm run eval -- --answers      # also evaluate generated answers
+npm run gate                   # inspect refusal signals
+npm run lint && npm run typecheck
+```
 
-![The extracted brief, with a decision reversed a month later in another meeting](docs/screenshots/04-meeting-brief.png)
+## What the product does
 
-**Ask** in a conversation, optionally scoped to some meetings. Clicking a `[S1]`
-citation opens the transcript at that turn, so any claim is checkable in two clicks.
-**New conversation** resets the thread, because history feeds query rewriting: a stale
-thread makes a bare "who owns it?" resolve against the wrong subject.
+### It reads imperfect transcripts
 
-![Clicking a citation opens the transcript at the cited turn](docs/screenshots/05-transcript-viewer.png)
+A transcript can be uploaded, pasted, or produced from an audio file. The parser
+understands six common layouts. These include WebVTT, SRT, lines such as
+`[00:12:34] Speaker: text`, and Google Meet exports where a speaker and a timestamp
+appear on one line and the speech appears below.
 
-**Decline** in the interface, not only in the prose. Below, retrieval returned thirteen
-excerpts — the question is close enough in shape to fool a similarity threshold — but
-the model judged them insufficient, and the badge reports that as the outcome.
+The detected format is visible in the interface. This matters. A parser that fails
+clearly is easy to fix. A parser that appears to work but loses every timestamp is
+much more dangerous.
 
-![A declined question, badged as having no answer in the sources](docs/screenshots/07-declined.png)
+![Upload, paste, or transcribe a meeting](docs/screenshots/06-upload.png)
 
-**Inspect** any answer: route, rewritten query, per-stage latency, candidates per
-retriever, the signals behind a refusal, tokens, estimated cost.
+### It creates a brief once
+
+Ingestion also creates a structured brief. It contains the summary, topics,
+decisions, action items, owners, due dates, and open questions.
+
+This work happens once, when the meeting enters the system. A common question such
+as “What did we decide?” can then use stored facts instead of asking a model to read
+the same transcript again.
+
+![A brief showing a decision that was reversed in a later meeting](docs/screenshots/04-meeting-brief.png)
+
+### It answers with evidence
+
+Questions can search every meeting or only a selected group. A marker such as `[S1]`
+is a link, not decoration. Clicking it opens the transcript at the relevant turn.
+
+Conversation history helps with follow-up questions. For example, “Who owns it?” can
+be rewritten using the previous question. The **New conversation** button clears
+that context when the topic changes.
+
+![A citation opening the supporting transcript](docs/screenshots/05-transcript-viewer.png)
+
+When the evidence does not answer the question, the assistant says so. This state is
+also shown as a badge. It is therefore visible even if the wording of the answer
+changes.
+
+![A question declined because the meetings do not contain the answer](docs/screenshots/07-declined.png)
+
+Each answer also has a trace. It shows the search query, the chosen sources, timing,
+token use, estimated cost, and whether retrieval or generation caused a problem.
 
 ![The trace inspector](docs/screenshots/03-trace-inspector.png)
 
-## Why RAG here, and when not to
+## Why this uses RAG
 
-**Long-context is the right default for one meeting and the wrong one for this
-product.** An hour-long meeting is 8–10k tokens; for a one-meeting tool I would send
-the whole transcript and get better answers, with no chunking or retrieval bugs.
+Sending the full transcript is often better than retrieval for one short meeting.
+The model sees the complete discussion. Nothing is lost between chunks.
 
-What breaks that is the question this product exists for. "Was that decision
-reversed?" spans meetings weeks apart, and a team's quarter is 40+ meetings and 400k+
-tokens. Cost and latency then scale with corpus size on *every* question, and accuracy
-*falls*, because the reversal in meeting 12 competes with eleven meetings of noise.
-Retrieval makes the cost of a question depend on the question, not on how long the team
-has kept minutes. So both paths exist and the route is chosen per question
-(`src/lib/rag/answer.ts`):
+That approach stops working as the archive grows. A team can produce hundreds of
+thousands of tokens in one quarter. Sending the whole archive for every question
+makes cost and latency grow with the archive. It can also reduce accuracy because the
+useful sentence is surrounded by many unrelated meetings.
 
-| Route | When | Why |
-| --- | --- | --- |
-| `whole-meeting` | 1–3 meetings, under 12k tokens, question about the meeting overall ("summarise", "all the action items") | Top-k loses by construction here: the answer is spread over the transcript, so any selection omits most of it |
-| `retrieval` | Everything else | Cost and latency proportional to the question |
-| `refused` | Nothing cleared the relevance gate | Below |
+This product must also answer questions that cross meetings. “Was that decision
+reversed?” may require one statement from January and another from February.
+Retrieval keeps the cost tied to the question instead of the size of the archive.
 
-**No orchestration framework.** I considered LangChain and LlamaIndex and wrote the
-pipeline directly. It is six stages I want to read and test without indirection, and
-the parts carrying the quality — a reserved quota inside rank fusion, chronological
-source ordering, neighbour expansion, a shared citation grammar — are exactly what I
-would be overriding in a framework. At ten pipelines rather than one, I would revisit.
+The app therefore uses two routes. If one to three selected meetings fit under the
+12,000-token budget, a broad request such as “Summarise these meetings” receives the
+full text. Other questions use retrieval. If search finds no meaningful evidence,
+the app refuses before generating an answer.
 
-## RAG design
+### Why there is no orchestration framework
 
-**Chunking: the speaking turn is the unit** (`src/lib/transcript/chunk.ts`). Fixed-size
-character windows are wrong for conversation and fail invisibly. Never split mid-turn —
-a sentence cut in two leaves neither half able to answer; a turn splits only above 520
-tokens, on sentence bounds. Overlap in whole turns, budgeted in tokens (~320 target,
-~60 overlap), because a decision is rarely one turn — propose, object, confirm — and
-repeating the previous tail keeps that exchange intact somewhere. Every line carries
-`[00:12:34] Speaker:`, so a chunk is self-describing and citations are verifiable by
-construction. A meeting/speaker header is prepended **for embedding only** (without it
-"yes, let's do that" embeds nowhere useful) and hidden from the user.
+I considered LangChain and LlamaIndex. I chose a small pipeline written directly in
+TypeScript.
 
-**Retrieval: hybrid, fused, diversified, widened** (`src/lib/rag/retrieve.ts`). Each
-stage fixes a reproducible failure.
+There is only one pipeline, and its important behaviour is specific to this product.
+Sources must remain in time order. Search results need neighbouring speaking turns.
+Dense and keyword search each need a protected place in the final result. These are
+the details I would have to override in a general framework.
 
-1. **Dense + BM25 in parallel.** Dense misses `MI-412` and surnames; BM25 misses "how
-   are we handling scale" when the transcript says "throughput". Both fail often,
-   rarely on the same query.
-2. **Reciprocal rank fusion.** Cosine and BM25 are incomparable scales and normalising
-   them means guessing a weight. RRF reads ranks only, so there is nothing to tune.
-3. **MMR** (λ=0.7), since chunk overlap makes the top hits the same exchange three
-   times.
-4. **Neighbour expansion** (±1 chunk, top 3 hits) recovers the half of an exchange that
-   fell below the cut. Limited to the strongest hits: expanding all turned 8 sources
-   into 17, which is a diluted prompt, not more context.
+Direct code is easier to inspect and test here. If the project grew to many different
+pipelines, a framework could become useful.
 
-Sources are then **ordered chronologically, not by score** — "we agreed X" arriving
-after "actually, not X" inverts the outcome.
+## How retrieval works
 
-One fix worth naming, because the eval caught it and the answer was structural: RRF
-rewards *appearing in both lists* over *being excellent in one*. The turn stating a
-reversal outright was BM25's second hit by a wide margin but absent from the dense
-top-k, so it landed at fused rank 11 and never reached the model — 50% recall there.
-Reading BM25's scores would reintroduce the normalisation guesswork RRF avoids, so each
-retriever gets a small **reserved quota** (`perRetrieverFloor=2`). That evicted another
-case at 8 slots, so `finalK` went to 10. Both hold.
+### A chunk follows the conversation
 
-**Store: SQLite via `node:sqlite`** (`src/lib/store/`). Vectors are Float32 blobs,
-cosine is a brute-force scan; FTS5 with the `porter` tokenizer gives BM25 in the same
-file and transaction, kept in sync by triggers so no path can forget to reindex. This
-is the choice I would defend hardest and also replace first: at this scale it beats a
-real vector database — zero dependencies, one file to back up, reproducible in CI, and
-a scan over a few thousand vectors is sub-millisecond, below the round-trip a hosted
-index would add. It stops being right near 10⁵ chunks, and the repository is a narrow
-interface (`denseSearch`, `lexicalSearch`, `documentFrequencies`) so that swap stays
-contained.
+A chunk is built from complete speaking turns. It targets about 320 tokens and
+overlaps the previous chunk by about 60 tokens.
 
-**Models.** `text-embedding-3-small` (1536d) for quality per dollar — a transcript
-corpus does not need `-large`. `gpt-4.1-mini` for the same reason: this task is
-extraction and faithful attribution, not reasoning. Offline mode substitutes 512d
-hashed vectors over unigrams and bigrams, so the pipeline runs deterministically with
-no key.
+This is different from cutting text every fixed number of characters. A decision is
+usually an exchange: one person proposes, another objects, and a third confirms. A
+random cut can separate the decision from its reason. Overlapping complete turns
+keeps at least one copy of that exchange together.
 
-## Grounding and refusal
+Very long monologues are the exception. They are split at sentence boundaries after
+520 tokens.
 
-`src/lib/rag/guardrails.ts` — the failure that destroys trust here is not an unsafe
-answer but a confident invented one. There is nothing to moderate (the corpus is the
-user's own meetings), so the guardrails target grounding:
+Each line keeps its speaker and timestamp:
 
-- **No evidence → refuse before calling the model.** Free, and needs no judgement.
-- **Invalid citations stripped and counted.** Models invent `[S14]` when ten sources
-  were given; the count surfaces so it lends no false authority.
-- **Citation coverage measured, not enforced.** Below 50% the UI warns. Rejecting the
-  answer would trade a slightly ungrounded answer for none, which users like less.
-- **Injection handled by framing, not filtering.** Sources are delimited and declared
-  data; ingested text reading like instructions is flagged.
-
-**Who decides "I don't know."** Top-k always returns k results however unrelated, so
-refusal needs an absolute signal. I first built the decision as a threshold gate on
-two: an absolute cosine floor, and specificity-weighted lexical coverage. Then I
-measured whether a separating threshold exists (`npm run gate`). It does not:
-
-```
-dense     answerable min 0.221  refusable max 0.402  OVERLAPS by 0.181
-coverage  answerable min 0.306  refusable max 0.691  OVERLAPS by 0.385
+```text
+[00:12:34] Sofia: We will ship the hourly version first.
 ```
 
-"What did we decide about the Kubernetes migration?" scores 0.402 — above eight
-answerable questions — because the embedding is dominated by the *shape* of the
-question, which matches this corpus exactly, not by the absent subject. So the design
-follows the evidence: **the gate refuses only when there is nothing to reason about**
-(nothing survived fusion, or no chunk cleared the floor) and **the model decides the
-rest**, which it does correctly on every deferred case. `looksLikeDecline` then
-recognises a decline so it is reported as one rather than filed as an answer that
-forgot to cite. Deliberate trade: a hard refusal costs a model call and ~2 s where a
-threshold was free — worth it, because the threshold refused real answers.
+The source can therefore explain who said something and where it happened without
+extra reconstruction. A meeting and speaker header is added only while creating the
+embedding. It gives meaning to short replies such as “Yes, let’s do that,” but it is
+not shown as evidence.
 
-## Evaluation
+### Two search methods cover different failures
 
-`npm run eval` — 16 hand-written cases in `data/eval/golden.json`, against a throwaway
-in-memory index. I did not want a score that looks authoritative while measuring
-nothing, so it checks what an answer key can: **retrieval recall** (did the evidence
-that must be present reach the prompt? — model-independent, and no prompt engineering
-recovers from evidence never retrieved), **refusal correctness**, and with `--answers`
-citation validity, coverage, latency and cost. Keyword presence is reported and
-labelled a weak proxy, because that is what it is.
+Semantic search compares embeddings. It understands that “handling scale” and
+“throughput” are related. It is less reliable for exact strings such as `MI-412` or a
+surname.
 
+BM25 keyword search has the opposite strengths. It is excellent for exact terms but
+does not understand paraphrases. The app runs both searches in parallel.
+
+Their scores cannot be compared directly. Reciprocal Rank Fusion combines their
+rankings instead. MMR then removes near-duplicates. Finally, the app adds the
+neighbouring chunks around the strongest results. This often restores the objection
+or confirmation next to a retrieved proposal.
+
+The final sources are placed in chronological order. For meeting intelligence, time
+is part of the meaning. Showing “We chose X” after “We no longer choose X” can make a
+correct set of sources produce the wrong conclusion.
+
+Evaluation revealed one weakness in rank fusion. A result that appears in both lists
+can outrank an excellent result found by only one search method. The sentence that
+explicitly reversed a decision fell from second place in BM25 to eleventh place after
+fusion. It never reached the model.
+
+The fix is a small reserved quota for each search method. Most positions still come
+from fusion, but neither search can lose all its strongest results. The context limit
+then moved from eight to ten sources so that this fix did not remove evidence needed
+by another test case.
+
+### SQLite is enough at this size
+
+SQLite stores meetings, chunks, vectors, keyword indexes, and traces. Vectors are
+Float32 blobs. FTS5 provides BM25 search. Database triggers keep text and keyword
+indexes in sync.
+
+This simple choice avoids an external service. It gives local setup one file and
+makes tests easy to reproduce. A linear scan over a few thousand vectors also takes
+less time than a network request to a hosted vector database.
+
+The trade-off is clear. A full scan will become too slow near 100,000 chunks. The
+storage code sits behind a small repository interface so it can later move to
+Postgres with `pgvector`.
+
+The online configuration uses `text-embedding-3-small` at 1,536 dimensions and
+`gpt-4.1-mini`. The task is mostly extraction and careful attribution, so larger
+models did not justify their extra cost. Offline mode replaces embeddings with
+512-dimensional hashes of words and two-word phrases.
+
+## Grounding and refusals
+
+The main safety problem is a confident answer with no support. The guardrails focus
+on that risk.
+
+When retrieval finds nothing meaningful, the app refuses before calling the model.
+When the model cites a source that does not exist, that citation is removed and
+counted. The UI also measures how many factual sentences contain a citation. If
+coverage is below 50%, it warns the reader instead of hiding the answer.
+
+Transcript content is treated as untrusted data. It is placed inside explicit source
+boundaries and cannot replace the system instructions. Text that resembles a prompt
+injection is flagged during ingestion.
+
+The prompt acts as a contract. It asks for one citation per factual sentence. It also
+tells the model to separate a proposal from a decision and to prefer a later decision
+when it replaces an earlier one. This is important in meetings, where several people
+may discuss an option before rejecting it.
+
+Retrieved sources share a fixed 6,000-token budget. The strongest evidence is packed
+first, but complete speaking turns stay together. Conversation history is used only
+to rewrite follow-up questions. It is not treated as evidence. This prevents an old
+assistant answer from becoming a new “fact.”
+
+### Why a score alone cannot decide “I don’t know”
+
+I first tried to reject questions with two thresholds. One measured semantic
+similarity. The other measured how much of the question’s vocabulary appeared in the
+sources.
+
+The evaluation showed that answerable and unanswerable questions overlap:
+
+```text
+dense     answerable min 0.221  refusable max 0.402
+coverage  answerable min 0.306  refusable max 0.691
 ```
+
+For example, “What did we decide about the Kubernetes migration?” scores 0.402 even
+though Kubernetes is absent. The sentence sounds like the other meeting questions,
+and that shape raises the embedding score.
+
+No threshold can separate these groups without rejecting valid questions. The cheap
+gate now handles only obvious cases where there is no semantic evidence. The model
+judges the remaining excerpts. If its opening sentence says the evidence is
+insufficient, the app records a decline.
+
+This costs about two extra seconds for difficult refusals. I accepted that cost
+because the faster rule rejected real answers.
+
+## Quality and evaluation
+
+The evaluation set contains 16 hand-written questions. It runs against a temporary
+in-memory index, so it cannot change development data.
+
+Retrieval recall checks whether the evidence required to answer reached the prompt.
+This is the most important retrieval metric. A perfect prompt cannot recover a fact
+that was never sent to the model.
+
+The full run also checks refusals, citation validity, citation coverage, latency,
+cost, and expected words. Expected-word matching is labelled as a weak proxy. It
+cannot prove that an answer is correct.
+
+```text
 cases                  16
 mean retrieval recall  100.0%      full recall  16/16
-refusal correctness    16/16       (gate 0, model decline 1)
+refusal correctness    16/16       gate 0, model decline 1
 median retrieval       337 ms      median end-to-end  2596 ms
-mean citation coverage 70.5%       (over 15 answers; 1 declined, nothing to cite)
+mean citation coverage 70.5%       15 answers, 1 valid decline
 invalid citations      0
-keyword presence       93.8%       (weak proxy, not accuracy)
-total estimated cost   $0.0311     (sixteen questions, answers included)
+keyword presence       93.8%       weak proxy, not accuracy
+total estimated cost   $0.0311
 ```
 
-The harness exits non-zero below 0.8 recall, so it can gate a pipeline. Answers sample
-at 0.2, so one run is not a measurement: across runs coverage ranged **60–78%** while
-recall, refusal correctness and invalid citations were identical — quote the range.
-Declines are excluded from the coverage average, having nothing to cite. Offline mode
-reaches the same recall, but its refusal correctness is *reported, not enforced*:
-hashed vectors score unrelated and relevant questions 0.15 against 0.20, carrying no
-information.
+The evaluation command fails below 80% recall, so it can be used in CI. Generated
+answers vary. Across repeated runs, citation coverage ranged from 60% to 78%.
+Retrieval recall, refusal correctness, and invalid citation count stayed unchanged.
+A valid refusal is excluded from citation coverage because it contains no claim to
+cite.
 
-Four cases come from a deliberately awful transcript — a real Google Meet export,
-disfluent, bilingual, self-correcting, with numbers the speakers contradict themselves
-on. Three check that uncertainty given is uncertainty reported: "4217 or 4219" must
-stay ambiguous, and a +18% A/B result must arrive with its broken-link caveat.
+Four cases use a deliberately messy Google Meet transcript. It is bilingual,
+disfluent, and contains self-corrections. The tests make sure uncertainty is
+preserved. “4217 or 4219” must remain ambiguous. An 18% A/B test result must keep the
+warning about a broken link.
 
-![Answering over the noisy pasted transcript](docs/screenshots/08-noisy-transcript.png)
+![An answer grounded in the messy pasted transcript](docs/screenshots/08-noisy-transcript.png)
 
-Measurement, not inspection, found every real bug here: citation markers parsed more
-narrowly than the model writes them (coverage read 15%, then 0% on a different shape,
-while answers were fully cited — and the same narrow pattern in the UI silently turned
-citations into dead grey text); a test suite quietly running against the live API
-whenever a key was exported; and a pasted transcript matching the wrong parser on the
-colon inside a timecode, inventing 36 speakers and losing all 53 timestamps while
-reporting success. Each is pinned by a test carrying the string that broke it.
+Measurement found bugs that visual inspection missed. Two valid citation layouts
+were initially treated as plain text. One test suite accidentally used the live API
+when a key existed in the shell. One transcript parser invented 36 speakers and lost
+53 timestamps because it mistook the colon inside a timecode for a speaker separator.
+Each bug now has a regression test using the input that exposed it.
 
-## Architecture
+## Architecture and observability
 
-```
-Next.js 16 (App Router) — one process, server routes + React UI
+```text
+Next.js 16 (App Router) — one process for server routes and React UI
 
-src/lib/transcript/   parse (6 formats) → turns → chunk by speaking turn
-src/lib/providers/    OpenAI-compatible | offline deterministic (same interface)
-src/lib/store/        SQLite: chunks + Float32 vectors + FTS5 + traces
-src/lib/rag/          ingest · retrieve · answer (routing) · brief · guardrails
-src/app/api/          health · meetings · chat (NDJSON stream) · traces · transcribe
-src/components/       workspace shell, chat, sources, brief, trace, transcript
+src/lib/transcript/   parse → speaking turns → chunks
+src/lib/providers/    OpenAI-compatible and deterministic offline providers
+src/lib/store/        SQLite, vectors, FTS5, traces
+src/lib/rag/          ingest, retrieve, answer, brief, guardrails
+src/app/api/          meetings, chat stream, traces, transcription
+src/components/       chat, sources, brief, trace, transcript viewer
 ```
 
-The domain layer holds no framework or vendor types, which is why the retrieval
-pipeline is unit-testable with no Next.js, no database file and no network.
+The domain layer contains no Next.js or OpenAI types. Retrieval can therefore be
+tested without starting the app, writing a database file, or using the network.
 
-**Observability** is not a dashboard: every request gets a trace id, structured
-stage-level logs (`pretty` locally, `json` in production), and the full trace persisted
-to SQLite and rendered in the UI. "Was it retrieval or generation?" is answerable in
-one click, which is the only observability that shortens a debugging loop.
+Every question receives a trace ID. Logs record the time spent in each stage. Local
+logs are easy to read, while production logs use JSON. The complete trace is also
+stored in SQLite and shown in the interface. When an answer looks wrong, the trace
+helps answer the useful first question: did search miss the evidence, or did the
+model misuse it?
 
-**Streaming** is NDJSON over `fetch`, not SSE: one `meta` event so source cards render
-while tokens arrive, then `delta`s, then `done` (verdict, usage, timings).
-Post-generation checks do not hold the stream back.
+Answers stream as NDJSON over `fetch`. A metadata event sends the sources first.
+Text deltas follow. The final event contains guardrail results, usage, and timing.
+This lets source cards appear before the answer finishes.
 
-## Productionising it
+## Production path
 
-The gap is mostly state, not code: the process is already stateless apart from SQLite.
+The application process is already stateless except for SQLite. Production work
+starts by moving that state into managed services.
 
-| Concern | Local today | On AWS |
-| --- | --- | --- |
-| Store | SQLite file | Aurora Postgres + `pgvector`; hybrid stays one round-trip, and the repository interface is the seam |
-| Transcripts, audio | local disk | S3, with the DB holding keys only |
-| Ingestion | inline in the request | SQS + worker; embedding a 40-meeting upload does not belong in an HTTP request |
-| App | `next start` | ECS Fargate behind an ALB, or Vercel; horizontal scaling is trivial once state leaves the process |
-| Secrets | `.env` | Secrets Manager, rotated |
-| Logs, traces | stdout + SQLite | OpenTelemetry → CloudWatch or Datadog, same trace id |
-| Cost | printed per answer | per-tenant budgets and rate limits, enforced before the model call |
+On AWS, Aurora Postgres with `pgvector` would replace SQLite. Dense and keyword
+search could remain in one database query. S3 would hold raw transcripts and audio.
+SQS workers would process ingestion outside the web request. The Next.js app could
+run on ECS Fargate behind an Application Load Balancer. Secrets Manager would hold
+credentials. OpenTelemetry would send the existing traces to CloudWatch or Datadog.
 
-Four things need real work beyond lifting and shifting. **Multi-tenancy**: transcripts
-are among the most sensitive documents a company has, so isolation belongs at the row
-level with a tenant id on every query and per-tenant keys — retrofitting that is far
-worse than starting with it. **Auth and audit**: SSO, and a record of who asked what.
-**Caching**: question embeddings and briefs are both cacheable, and repeat questions
-are common here. **Retrieval eval in CI** on every prompt or chunking change — the
-harness already exits non-zero, so this is wiring, and it is what stops a silent
-quality regression reaching users. Cheaper at scale: batch embeddings at ingestion, and
-route brief extraction to a smaller model than the one answering.
+This also allows more web instances to run at the same time. Uploading forty meetings
+would no longer block an HTTP request, and application containers would not need a
+shared local disk.
 
-## Engineering standards
+Infrastructure alone is not enough. Every database query must include a tenant ID.
+Sensitive transcripts need encryption, SSO, and an audit log of who asked what.
+Budgets and rate limits should be checked before model calls. Repeated question
+embeddings and meeting briefs can be cached. Embeddings should be batched during
+ingestion. Brief extraction can use a smaller model than final answers.
 
-**Followed.** TypeScript strict, no `any` in the domain layer, and no framework or
-vendor types there either — that is what makes it testable without a server. Provider
-access goes through one interface with two implementations, so offline mode is a real
-code path rather than a mock. 103 tests over parsing, chunk boundaries, fusion/MMR/
-budget packing, guardrails and citation grammar, plus integration tests that ingest,
-retrieve, stream and assert a trace was written; forced offline in `vitest.config.mts`,
-so they are deterministic, free, and fail for one reason only. Lint and typecheck
-clean. Structured logs with a trace id per request. Comments explain why, not what.
-Secrets out of the repo, image non-root and multi-stage.
+The retrieval evaluation should also run in CI whenever prompts, chunking, or search
+change. The command already returns a failure code when recall drops, so only the CI
+wiring is missing.
 
-**Skipped, knowingly.** No auth or multi-tenancy — right for a local tool,
-disqualifying for a deployment, first on the list above. No CI config, though every
-gate it would run exists as a script. No migrations: the schema is created on open,
-fine while every deployment is a fresh one. No E2E browser suite; Playwright captures
-screenshots, it does not assert. No coverage threshold — I would rather have six test
-files pinning real bugs than a number. Token counting is `chars / 4`, not a real
-tokenizer: budgets are labelled estimates and the ceiling has slack for that. No
-accessibility audit beyond keyboard paths and semantic controls.
+## Engineering choices
 
-## What I would do next, in order
+The project uses strict TypeScript. Domain code has no `any` and no framework or
+vendor types. Provider calls go through one interface with online and offline
+implementations. Offline mode is therefore a real execution path, not a test mock.
 
-1. **Cross-encoder reranking** over the fused candidates — the standard precision win,
-   and it removes the need to tune `finalK`. Left out because the eval set does not yet
-   show the failure it fixes, and adding it without a metric that moves is decoration.
-2. **Postgres + pgvector**, hybrid scoring in one SQL round-trip.
-3. **LLM-as-judge grading**, pairwise against reference answers, replacing keyword
-   presence with something that measures answer quality rather than proxying it.
-4. **Speaker diarisation** on the audio path — transcription produces text without
-   reliable speaker labels, the weakest link in that flow.
-5. **Multi-tenant isolation and auth**, per above.
-6. **Incremental re-embedding** on chunk-strategy changes instead of full re-ingestion.
+There are 103 tests. They cover parsing, chunk boundaries, fusion, diversity,
+context budgets, guardrails, citations, ingestion, streaming, and traces. Tests force
+the offline provider, so they are deterministic and free. Lint and type checks pass.
+Secrets are ignored by Git. The Docker image is multi-stage and runs as a non-root
+user.
+
+Some production standards were deliberately left out. There is no authentication,
+multi-tenancy, database migration system, or CI configuration yet. Playwright
+captures documentation screenshots but is not used as an end-to-end assertion
+suite. Token counts use the approximation `characters / 4`. The context ceiling
+keeps enough slack for that estimate. Accessibility has not received a full audit.
+
+These omissions are acceptable for a local assignment. They are not acceptable for
+a deployed product.
+
+## What I would do next
+
+The first improvement would be a cross-encoder reranker. It would compare the best
+search results more carefully and reduce the need to tune `finalK`. I left it out
+because the current evaluation set does not show the problem it solves. Adding a
+second model without a metric that improves would be decoration.
+
+The next infrastructure step is Postgres with `pgvector`. After that, I would replace
+expected-word grading with pairwise LLM evaluation against reference answers.
+
+Audio also needs speaker diarisation. Transcription currently produces words without
+reliable speaker labels, which weakens attribution. Multi-tenant isolation and
+authentication must follow before deployment. Finally, changes to chunking should
+re-embed only affected meetings instead of rebuilding the full index.
 
 ## Known limitations
 
-- Offline mode cannot judge relevance well enough to refuse reliably (measured above).
-- Refusal on hard cases costs a model call, because the cheap signals provably cannot
-  make it. A classifier over the retrieved evidence would win it back.
-- `looksLikeDecline` matches patterns in the first sentence and errs towards
-  under-detection: an unusual phrasing is reported as low coverage instead.
-- Cosine similarity is a full scan: fine to ~10⁵ chunks, then it needs an index.
-- The final turn's end timestamp is estimated from speaking rate, since nothing follows
-  it to bound.
-- Transcripts without timestamps are indexed and cited by turn, but citations cannot
-  deep-link to a time that was never recorded.
-- Cost figures are estimates from a static price table, and labelled as such.
-- The brief is extracted once at ingestion: cheap lookups, but a schema change means
-  re-ingesting.
+Offline mode cannot judge difficult refusals reliably. Hard refusals with the online
+provider cost a model call. The decline detector recognises common phrases in the
+first sentence, so unusual wording may appear as low citation coverage instead.
+
+Vector search is a full scan and will need an index as the corpus approaches 100,000
+chunks. The last turn’s end time is estimated because no following timestamp bounds
+it. Transcripts without timestamps can still be searched and cited by turn, but a
+citation cannot open an exact moment.
+
+Cost values come from a static price table and are estimates. Briefs are created at
+ingestion time, so changing their schema requires re-ingesting the meeting.
